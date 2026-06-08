@@ -1,0 +1,334 @@
+package com.example.ui.viewmodel
+
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.MediaPlayerApp
+import com.example.data.db.MediaEntity
+import com.example.data.db.PlaylistEntity
+import com.example.data.repository.MediaRepository
+import com.example.playback.PlaybackManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class MediaViewModel(
+    application: Application,
+    private val repository: MediaRepository,
+    private val playbackManager: PlaybackManager
+) : AndroidViewModel(application) {
+
+    private val TAG = "MediaViewModel"
+
+    // Subscribed flows directly from the Database Repository
+    val allAudio = repository.allAudio.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allVideos = repository.allVideos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val favorites = repository.favorites.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val playlists = repository.playlists.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val recentlyPlayed = repository.recentlyPlayed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Search query state
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    // Filtered lists combining Search Query + Data collections
+    val filteredAudio = combine(allAudio, _searchQuery) { audio, query ->
+        if (query.isEmpty()) audio
+        else audio.filter { it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val filteredVideos = combine(allVideos, _searchQuery) { videos, query ->
+        if (query.isEmpty()) videos
+        else videos.filter { it.title.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Grouping calculations for library sections
+    val albums = allAudio.combine(allAudio) { songs, _ ->
+        songs.groupBy { it.album }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val artists = allAudio.combine(allAudio) { songs, _ ->
+        songs.groupBy { it.artist }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val genres = allAudio.combine(allAudio) { songs, _ ->
+        songs.groupBy { it.genre }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // Folder View calculated dynamically from full data set paths
+    val folders = combine(allAudio, allVideos) { aud, vid ->
+        val combinedPaths = (aud + vid)
+        combinedPaths.groupBy { item ->
+            val index = item.path.lastIndexOf('/')
+            if (index != -1) {
+                // If it represents assets, structure it as "Assets" folder
+                if (item.path.startsWith("asset:///")) {
+                    "Local Assets"
+                } else {
+                    item.path.substring(0, index).substringAfterLast('/')
+                }
+            } else {
+                "Root Storage"
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // Settings States (persisted via SharedPreferences, customizable in UI)
+    private val prefs = application.getSharedPreferences("media_player_settings", android.content.Context.MODE_PRIVATE)
+
+    private val _isDarkTheme = MutableStateFlow<Boolean?>(
+        if (prefs.contains("is_dark_theme")) prefs.getBoolean("is_dark_theme", false) else null
+    )
+    val isDarkTheme = _isDarkTheme.asStateFlow()
+
+    private val _gestureSensitivity = MutableStateFlow(prefs.getFloat("gesture_sensitivity", 1.0f))
+    val gestureSensitivity = _gestureSensitivity.asStateFlow()
+
+    private val _smartResumeEnabled = MutableStateFlow(prefs.getBoolean("smart_resume_enabled", false))
+    val smartResumeEnabled = _smartResumeEnabled.asStateFlow()
+
+    private val _selectedPlaylistSongs = MutableStateFlow<List<MediaEntity>>(emptyList())
+    val selectedPlaylistSongs = _selectedPlaylistSongs.asStateFlow()
+
+    private val _activePlaylist = MutableStateFlow<PlaylistEntity?>(null)
+    val activePlaylist = _activePlaylist.asStateFlow()
+
+    // Video Playback configuration parameters
+    private val _videoPlaybackSpeed = MutableStateFlow(1.0f)
+    val videoPlaybackSpeed = _videoPlaybackSpeed.asStateFlow()
+
+    private val _videoAspectRatio = MutableStateFlow(AspectRatioMode.FIT)
+    val videoAspectRatio = _videoAspectRatio.asStateFlow()
+
+    // Subtitle configurations
+    private val _subtitleSize = MutableStateFlow(18f) // sp
+    val subtitleSize = _subtitleSize.asStateFlow()
+
+    val subtitleColors = listOf("White", "Yellow", "Cyan", "Green")
+    private val _subtitleColor = MutableStateFlow("White")
+    val subtitleColor = _subtitleColor.asStateFlow()
+
+    private val _subtitleBackground = MutableStateFlow(true)
+    val subtitleBackground = _subtitleBackground.asStateFlow()
+
+    private val _subtitleDelay = MutableStateFlow(0) // milliseconds offset
+    val subtitleDelay = _subtitleDelay.asStateFlow()
+
+    // Active Playback states linked directly to the Singleton playbackManager
+    val currentSong = playbackManager.currentSong
+    val isPlaying = playbackManager.isPlaying
+    val spectrumData = playbackManager.visualizerManager.spectrumData
+    val playbackQueue = playbackManager.playbackQueue
+    val isShuffleEnabled = playbackManager.isShuffleEnabled
+    val repeatMode = playbackManager.repeatMode
+    val playbackSpeed = playbackManager.playbackSpeed
+    val pitch = playbackManager.pitch
+    val balance = playbackManager.balance
+    val currentPosition = playbackManager.currentPosition
+    val duration = playbackManager.duration
+    val sleepTimerRemaining = playbackManager.sleepTimerRemaining
+
+    val eqEnabled = playbackManager.eqEnabled
+    val eqBands = playbackManager.eqBands
+    val bassBoost = playbackManager.bassBoostLevel
+    val virtualizer = playbackManager.virtualizerLevel
+    val loudnessEnhancer = playbackManager.loudnessEnhancerGain
+
+    init {
+        // Automatically scan files on creation
+        viewModelScope.launch {
+            repository.scanLocalMedia()
+        }
+
+        // Smart Resume startup automation
+        viewModelScope.launch {
+            var hasResumed = false
+            repository.allMedia.collect { allMediaList ->
+                if (!hasResumed && allMediaList.isNotEmpty()) {
+                    if (smartResumeEnabled.value) {
+                        hasResumed = true
+                        val lastItem = allMediaList.filter { it.recentlyPlayed > 0 }
+                            .maxByOrNull { it.recentlyPlayed }
+                        if (lastItem != null) {
+                            val targetPosition = lastItem.lastPlayedPosition
+                            Log.i(TAG, "Smart Resume: Restoring last active item ${lastItem.title} at $targetPosition ms.")
+                            
+                            val isVideo = lastItem.isVideo
+                            val rawCategoryList = if (isVideo) {
+                                allMediaList.filter { it.isVideo }
+                            } else {
+                                allMediaList.filter { !it.isVideo }
+                            }
+                            val listToLoad = if (rawCategoryList.any { it.path == lastItem.path }) rawCategoryList else listOf(lastItem)
+                            val indexToResume = listToLoad.indexOfFirst { it.path == lastItem.path }.coerceAtLeast(0)
+                            
+                            playbackManager.setQueue(listToLoad, indexToResume)
+                            if (targetPosition > 0L) {
+                                playbackManager.seekTo(targetPosition)
+                            }
+                            playbackManager.play()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun search(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun forceScanMedia() {
+        viewModelScope.launch {
+            repository.scanLocalMedia()
+        }
+    }
+
+    // Playback control interfaces
+    fun playSongAtIndex(songs: List<MediaEntity>, index: Int) {
+        playbackManager.setQueue(songs, index)
+        recordPlaybackEvent(songs[index].path)
+    }
+
+    fun play() = playbackManager.play()
+    fun pause() = playbackManager.pause()
+    fun stop() = playbackManager.stop()
+    fun playNext() = playbackManager.playNext()
+    fun playPrevious() = playbackManager.playPrevious()
+    fun toggleShuffle() = playbackManager.toggleShuffle()
+    fun toggleRepeatMode() = playbackManager.toggleRepeatMode()
+    fun seekTo(positionMs: Long) = playbackManager.seekTo(positionMs)
+
+    fun setPlaybackSpeed(speed: Float) {
+        playbackManager.setPlaybackSpeed(speed)
+    }
+
+    fun setPitch(pitch: Float) {
+        playbackManager.setPitch(pitch)
+    }
+
+    fun setBalance(bal: Float) {
+        playbackManager.setBalance(bal)
+    }
+
+    // Favorite mechanics
+    fun toggleFavorite(item: MediaEntity) {
+        viewModelScope.launch {
+            repository.toggleFavorite(item.path, !item.isFavorite)
+        }
+    }
+
+    private fun recordPlaybackEvent(path: String) {
+        viewModelScope.launch {
+            repository.recordPlayback(path)
+        }
+    }
+
+    fun updateLastPlayedProgress(path: String, position: Long) {
+        viewModelScope.launch {
+            repository.updateLastPlayedPosition(path, position)
+        }
+    }
+
+    // Playlist Interfaces
+    fun createPlaylist(name: String) {
+        viewModelScope.launch {
+            repository.createPlaylist(name)
+        }
+    }
+
+    fun deletePlaylist(id: Long) {
+        viewModelScope.launch {
+            repository.deletePlaylist(id)
+        }
+    }
+
+    fun addSongToPlaylist(playlistId: Long, songPath: String) {
+        viewModelScope.launch {
+            repository.addSongToPlaylist(playlistId, songPath)
+        }
+    }
+
+    fun removeSongFromPlaylist(playlistId: Long, songPath: String) {
+        viewModelScope.launch {
+            repository.removeSongFromPlaylist(playlistId, songPath)
+        }
+    }
+
+    fun selectPlaylist(playlist: PlaylistEntity) {
+        _activePlaylist.value = playlist
+        viewModelScope.launch {
+            repository.getSongsInPlaylist(playlist.playlistId).collect { songs ->
+                _selectedPlaylistSongs.value = songs
+            }
+        }
+    }
+
+    // Queue actions
+    fun addToQueue(song: MediaEntity) = playbackManager.addToQueue(song)
+    fun removeFromQueue(songPath: String) = playbackManager.removeFromQueue(songPath)
+    fun reorderQueue(from: Int, to: Int) = playbackManager.reorderQueue(from, to)
+
+    // Sleep Timer action
+    fun setSleepTimer(minutes: Int) = playbackManager.setSleepTimer(minutes)
+
+    // Equalizer controls
+    fun toggleEqualizer(enabled: Boolean) = playbackManager.toggleEqualizer(enabled)
+    fun setEqualizerBand(band: Int, level: Int) = playbackManager.setEqualizerBand(band, level)
+    fun setBassBoost(level: Int) = playbackManager.setBassBoost(level)
+    fun setVirtualizer(level: Int) = playbackManager.setVirtualizer(level)
+    fun setLoudnessEnhancer(gain: Int) = playbackManager.setLoudnessEnhancer(gain)
+
+    // Dark/Light toggle
+    fun setThemePref(themeMode: Boolean?) {
+        _isDarkTheme.value = themeMode
+        if (themeMode != null) {
+            prefs.edit().putBoolean("is_dark_theme", themeMode).apply()
+        } else {
+            prefs.edit().remove("is_dark_theme").apply()
+        }
+    }
+
+    fun setGestureSensitivity(value: Float) {
+        _gestureSensitivity.value = value
+        prefs.edit().putFloat("gesture_sensitivity", value).apply()
+    }
+
+    fun setSmartResumeEnabled(enabled: Boolean) {
+        _smartResumeEnabled.value = enabled
+        prefs.edit().putBoolean("smart_resume_enabled", enabled).apply()
+    }
+
+    // Subtitle configurations
+    fun setSubtitleSize(size: Float) { _subtitleSize.value = size }
+    fun setSubtitleColor(color: String) { _subtitleColor.value = color }
+    fun toggleSubtitleBackground(show: Boolean) { _subtitleBackground.value = show }
+    fun setSubtitleDelay(delayMs: Int) { _subtitleDelay.value = delayMs }
+
+    // Video Player Custom Speeds & Actions
+    fun setVideoPlaybackSpeed(speed: Float) { _videoPlaybackSpeed.value = speed }
+    fun setVideoAspectRatio(mode: AspectRatioMode) { _videoAspectRatio.value = mode }
+}
+
+enum class AspectRatioMode {
+    FIT, STRETCH, CROP, FILL
+}
+
+// ViewModel Factory supporting manual Constructor Injection container
+class MediaViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(MediaViewModel::class.java)) {
+            val app = application as MediaPlayerApp
+            @Suppress("UNCHECKED_CAST")
+            return MediaViewModel(application, app.mediaRepository, app.playbackManager) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}

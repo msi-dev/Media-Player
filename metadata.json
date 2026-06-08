@@ -1,0 +1,6 @@
+{
+  "name": "Media Player",
+  "description": "A high-perf local, premium offline-first Audio and Video Player application supporting extensive formats, advanced equalizer, and smart gesture controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
