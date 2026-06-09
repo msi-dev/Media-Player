@@ -33,14 +33,17 @@ import com.example.ui.theme.DarkTertiary
 import com.example.ui.theme.TextSecondaryDark
 import com.example.ui.viewmodel.MediaViewModel
 import kotlinx.coroutines.launch
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: MediaViewModel
 ) {
+    val context = LocalContext.current
     var activeTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Audio", "Video", "Folders", "Settings")
+    val tabs = listOf("Audio", "Video", "Folders")
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -74,8 +77,7 @@ fun MainScreen(
                     val icon = when (index) {
                         0 -> Icons.Filled.Audiotrack
                         1 -> Icons.Filled.Videocam
-                        2 -> Icons.Filled.Folder
-                        else -> Icons.Filled.Settings
+                        else -> Icons.Filled.Folder
                     }
                     NavigationRailItem(
                         selected = activeTab == index,
@@ -100,61 +102,66 @@ fun MainScreen(
                 .weight(1f)
                 .fillMaxHeight()
         ) {
-            // Immersive Custom Top Bar
+            // Minimal Full-Width Search Bar with Settings button instead of Title Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = systemStatusBarPadding.calculateTopPadding())
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column {
-                    Text(
-                        text = "MSI Cinema Deck",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                    Text(
-                        text = "Premium Studio Media Suite",
-                        color = DarkPrimary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.search(it) },
+                    placeholder = { Text("Search tracks, videos, genres...", fontSize = 12.sp, color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search", modifier = Modifier.size(16.dp), tint = Color.Gray) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.search("") }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp), tint = Color.Gray)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = DarkPrimary,
+                        unfocusedBorderColor = Color.DarkGray,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    singleLine = true
+                )
 
-                // Header interactive quick search bar (only shown in libraries)
-                if (activeTab == 0 || activeTab == 1) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { viewModel.search(it) },
-                        placeholder = { Text("Quick search...", fontSize = 12.sp, color = Color.Gray) },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Gray) },
-                        modifier = Modifier
-                            .width(180.dp)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = DarkPrimary,
-                            unfocusedBorderColor = Color.DarkGray,
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        singleLine = true
+                IconButton(
+                    onClick = {
+                        val intent = Intent(context, com.example.SettingsActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        tint = DarkPrimary,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // active screens mapping
             Box(modifier = Modifier.weight(1f)) {
                 when (activeTab) {
                     0 -> AudioTab(viewModel)
                     1 -> VideoTab(viewModel)
-                    2 -> FolderTab(viewModel)
-                    3 -> SettingsTab(viewModel)
+                    else -> FolderTab(viewModel)
                 }
 
                 // Pinned visual Mini-Player deck
@@ -180,20 +187,20 @@ fun MainScreen(
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = DarkPrimary,
-                    windowInsets = WindowInsets.navigationBars
+                    windowInsets = WindowInsets.navigationBars,
+                    modifier = Modifier.height(58.dp)
                 ) {
                     tabs.forEachIndexed { index, label ->
                         val icon = when (index) {
                             0 -> Icons.Filled.MusicNote
                             1 -> Icons.Filled.Videocam
-                            2 -> Icons.Filled.Folder
-                            else -> Icons.Filled.Settings
+                            else -> Icons.Filled.Folder
                         }
                         NavigationBarItem(
                             selected = activeTab == index,
                             onClick = { activeTab = index },
-                            icon = { Icon(icon, contentDescription = label) },
-                            label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp) },
+                            icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp)) },
+                            label = { Text(label, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 0.3.sp) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = DarkPrimary,
@@ -335,6 +342,7 @@ fun MiniPlayerCard(
 }
 
 // Immersive Glassmorphic Full Screen Media Overlay Sheet
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FullscreenPlayerSheet(
     song: MediaEntity,
@@ -348,6 +356,9 @@ fun FullscreenPlayerSheet(
     val repeatMode by viewModel.repeatMode.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val timerRemaining by viewModel.sleepTimerRemaining.collectAsState()
+
+    var showSpeedDialog by remember { mutableStateOf(false) }
+    var showSleepTimerPicker by remember { mutableStateOf(false) }
     val queue by viewModel.playbackQueue.collectAsState()
 
     var showQueueDrawer by remember { mutableStateOf(false) }
@@ -361,8 +372,7 @@ fun FullscreenPlayerSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(DarkSecondary.copy(alpha = 0.45f), Color.Black)))
-                .blur(80.dp)
+                .background(Color.Black)
         )
 
         Column(
@@ -457,20 +467,19 @@ fun FullscreenPlayerSheet(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    val coverBg = Brush.linearGradient(listOf(DarkSecondary, DarkPrimary, DarkTertiary))
+                    val coverBg = MaterialTheme.colorScheme.surfaceVariant
                     Box(
                         modifier = Modifier
-                            .aspectRatio(1f)
-                            .fillMaxHeight(0.7f)
-                            .clip(RoundedCornerShape(24.dp))
+                            .size(180.dp)
+                            .clip(CircleShape)
                             .background(coverBg),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Filled.MusicNote,
+                            Icons.Filled.Album,
                             contentDescription = "Vinyl",
                             tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.fillMaxSize(0.45f)
+                            modifier = Modifier.fillMaxSize(0.6f)
                         )
                     }
 
@@ -479,7 +488,7 @@ fun FullscreenPlayerSheet(
                         viewModel = viewModel,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(72.dp)
+                            .height(64.dp)
                             .padding(horizontal = 16.dp)
                     )
                 }
@@ -568,12 +577,12 @@ fun FullscreenPlayerSheet(
                     )
                 }
 
-                // Skip previous
+                // Skip previous (enlarged)
                 IconButton(onClick = { viewModel.playPrevious() }) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(38.dp))
+                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(48.dp))
                 }
 
-                // Core play pause trigger
+                // Core play pause trigger (enlarged)
                 IconButton(
                     onClick = { if (isPlaying) viewModel.pause() else viewModel.play() }
                 ) {
@@ -581,13 +590,13 @@ fun FullscreenPlayerSheet(
                         if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                         contentDescription = "PlayPause",
                         tint = DarkPrimary,
-                        modifier = Modifier.size(72.dp)
+                        modifier = Modifier.size(82.dp)
                     )
                 }
 
-                // Skip next
+                // Skip next (enlarged)
                 IconButton(onClick = { viewModel.playNext() }) {
-                    Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(38.dp))
+                    Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(48.dp))
                 }
 
                 // Repeat Modes toggles
@@ -620,14 +629,7 @@ fun FullscreenPlayerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.clickable {
-                        val nextSpeed = when (playbackSpeed) {
-                            1.0f -> 1.25f
-                            1.25f -> 1.5f
-                            1.5f -> 2.0f
-                            2.0f -> 0.75f
-                            else -> 1.0f
-                        }
-                        viewModel.setPlaybackSpeed(nextSpeed)
+                        showSpeedDialog = true
                     }
                 ) {
                     Icon(Icons.Filled.SlowMotionVideo, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(16.dp))
@@ -638,13 +640,16 @@ fun FullscreenPlayerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.clickable {
-                        // Quick add 15 minutes sleep timer
-                        viewModel.setSleepTimer(if (timerRemaining > 0) 0 else 15)
+                        if (timerRemaining > 0) {
+                            viewModel.setSleepTimer(0) // Cancel if already active
+                        } else {
+                            showSleepTimerPicker = true
+                        }
                     }
                 ) {
                     Icon(Icons.Filled.Alarm, contentDescription = null, tint = if (timerRemaining > 0) DarkTertiary else Color.Gray, modifier = Modifier.size(16.dp))
                     Text(
-                        text = if (timerRemaining > 0) "Sleep active" else "Sleep off",
+                        text = if (timerRemaining > 0) "Sleep: ${formatDuration(timerRemaining)}" else "Sleep off",
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -652,6 +657,100 @@ fun FullscreenPlayerSheet(
                 }
             }
         }
+    }
+
+    // Modern Dialog for Speed Selection
+    if (showSpeedDialog) {
+        AlertDialog(
+            onDismissRequest = { showSpeedDialog = false },
+            title = { Text("Playback Speed", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+                    speeds.forEach { speed ->
+                        val selected = playbackSpeed == speed
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.setPlaybackSpeed(speed)
+                                    showSpeedDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 12.dp)
+                                .background(if (selected) DarkPrimary.copy(alpha = 0.2f) else Color.Transparent, shape = RoundedCornerShape(8.dp)),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${speed}x", color = if (selected) DarkPrimary else Color.White, fontSize = 14.sp)
+                            if (selected) {
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSpeedDialog = false }) {
+                    Text("Close", color = DarkPrimary)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
+
+    // Modern Material 3 Sleep Timer Clock-Face Picker Dialog
+    if (showSleepTimerPicker) {
+        val pickerState = rememberTimePickerState(
+            is24Hour = true
+        )
+
+        AlertDialog(
+            onDismissRequest = { showSleepTimerPicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val now = java.util.Calendar.getInstance()
+                        val currentHour = now.get(java.util.Calendar.HOUR_OF_DAY)
+                        val currentMinute = now.get(java.util.Calendar.MINUTE)
+
+                        var deltaMinutes = (pickerState.hour * 60 + pickerState.minute) - (currentHour * 60 + currentMinute)
+                        if (deltaMinutes <= 0) {
+                            deltaMinutes += 24 * 60 // Target is tomorrow
+                        }
+                        viewModel.setSleepTimer(deltaMinutes)
+                        showSleepTimerPicker = false
+                    }
+                ) {
+                    Text("Set", color = DarkPrimary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSleepTimerPicker = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            title = {
+                Text("Select Sleep Stop Time", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            },
+            text = {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TimePicker(
+                        state = pickerState,
+                        colors = TimePickerDefaults.colors(
+                            clockDialColor = Color.DarkGray,
+                            selectorColor = DarkPrimary,
+                            periodSelectorBorderColor = DarkPrimary,
+                            clockDialSelectedContentColor = Color.Black,
+                            clockDialUnselectedContentColor = Color.LightGray
+                        )
+                    )
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
     }
 }
 

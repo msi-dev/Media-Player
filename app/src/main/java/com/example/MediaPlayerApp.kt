@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import com.example.data.db.MediaDatabase
 import com.example.data.repository.MediaRepository
+import com.example.data.repository.HiddenFolderRepository
 import com.example.playback.PlaybackManager
 
 class MediaPlayerApp : Application() {
@@ -16,6 +17,9 @@ class MediaPlayerApp : Application() {
     lateinit var mediaRepository: MediaRepository
         private set
 
+    lateinit var hiddenFolderRepository: HiddenFolderRepository
+        private set
+
     lateinit var playbackManager: PlaybackManager
         private set
 
@@ -26,8 +30,11 @@ class MediaPlayerApp : Application() {
         // 1. Initializing Room database instance
         database = MediaDatabase.getDatabase(this)
         
+        // 2b. Initializing Hidden Folders repository
+        hiddenFolderRepository = HiddenFolderRepository(database.hiddenFolderDao())
+
         // 2. Initializing Media content and database scanner repository
-        mediaRepository = MediaRepository(this, database.mediaDao())
+        mediaRepository = MediaRepository(this, database.mediaDao(), database.hiddenFolderDao())
         
         // 3. Initializing central Media3 ExoPlayer state manager
         playbackManager = PlaybackManager(this)

@@ -10,6 +10,7 @@ import com.example.MediaPlayerApp
 import com.example.data.db.MediaEntity
 import com.example.data.db.PlaylistEntity
 import com.example.data.repository.MediaRepository
+import com.example.data.repository.HiddenFolderRepository
 import com.example.playback.PlaybackManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,14 +23,32 @@ import kotlinx.coroutines.launch
 class MediaViewModel(
     application: Application,
     private val repository: MediaRepository,
-    private val playbackManager: PlaybackManager
+    private val playbackManager: PlaybackManager,
+    private val hiddenFolderRepository: HiddenFolderRepository
 ) : AndroidViewModel(application) {
 
     private val TAG = "MediaViewModel"
 
-    // Subscribed flows directly from the Database Repository
-    val allAudio = repository.allAudio.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val allVideos = repository.allVideos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Hidden Folders Flow
+    val hiddenFolders = hiddenFolderRepository.allHiddenFolders.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
+
+    // Subscribed flows directly from the Database Repository (dynamically filtered by non-hidden directories)
+    val allAudio = combine(repository.allAudio, hiddenFolders) { audio, hidden ->
+        val hiddenPaths = hidden.map { it.folderPath }
+        audio.filter { item ->
+            hiddenPaths.none { hiddenPath -> item.path.startsWith(hiddenPath) }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allVideos = combine(repository.allVideos, hiddenFolders) { videos, hidden ->
+        val hiddenPaths = hidden.map { it.folderPath }
+        videos.filter { item ->
+            hiddenPaths.none { hiddenPath -> item.path.startsWith(hiddenPath) }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val favorites = repository.favorites.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val playlists = repository.playlists.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val recentlyPlayed = repository.recentlyPlayed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -80,8 +99,47 @@ class MediaViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    // Aggregated real physical directory paths of all cataloged media files
+    val allPhysicalFolders = combine(repository.allAudio, repository.allVideos) { aud, vid ->
+        val combined = aud + vid
+        combined.map { item ->
+            val index = item.path.lastIndexOf('/')
+            if (index != -1) {
+                if (item.path.startsWith("asset:///")) {
+                    "Local Assets"
+                } else {
+                    item.path.substring(0, index)
+                }
+            } else {
+                "Root Storage"
+            }
+        }.distinct().filter { it != "Local Assets" && it != "Root Storage" }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Settings States (persisted via SharedPreferences, customizable in UI)
     private val prefs = application.getSharedPreferences("media_player_settings", android.content.Context.MODE_PRIVATE)
+
+    // Configurable Sub-Tabs defaults ordered according to Tracks, Album, Favorite, Playlist, then others
+    val defaultTabs = listOf("Tracks", "Album", "Favorite", "Playlist", "Artists", "Genres")
+    
+    private val _visibleTabs = MutableStateFlow<List<String>>(loadSavedTabs())
+    val visibleTabs = _visibleTabs.asStateFlow()
+
+    private fun loadSavedTabs(): List<String> {
+        val tabString = prefs.getString("enabled_tabs_order", null)
+        if (tabString != null) {
+            val list = tabString.split(",").filter { it.isNotEmpty() }
+            if (list.isNotEmpty()) {
+                return list.filter { defaultTabs.contains(it) }
+            }
+        }
+        return defaultTabs
+    }
+
+    fun saveVisibleTabs(tabs: List<String>) {
+        _visibleTabs.value = tabs
+        prefs.edit().putString("enabled_tabs_order", tabs.joinToString(",")).apply()
+    }
 
     private val _isDarkTheme = MutableStateFlow<Boolean?>(
         if (prefs.contains("is_dark_theme")) prefs.getBoolean("is_dark_theme", false) else null
@@ -93,6 +151,21 @@ class MediaViewModel(
 
     private val _smartResumeEnabled = MutableStateFlow(prefs.getBoolean("smart_resume_enabled", false))
     val smartResumeEnabled = _smartResumeEnabled.asStateFlow()
+
+    private val _audioFocusEnabled = MutableStateFlow(prefs.getBoolean("audio_focus_enabled", true))
+    val audioFocusEnabled = _audioFocusEnabled.asStateFlow()
+
+    private val _defaultPlaybackSpeed = MutableStateFlow(prefs.getFloat("default_playback_speed", 1.0f))
+    val defaultPlaybackSpeed = _defaultPlaybackSpeed.asStateFlow()
+
+    private val _defaultAspectRatio = MutableStateFlow(prefs.getString("default_aspect_ratio", "FIT") ?: "FIT")
+    val defaultAspectRatio = _defaultAspectRatio.asStateFlow()
+
+    private val _subtitleEnabledDefault = MutableStateFlow(prefs.getBoolean("subtitle_enabled_default", true))
+    val subtitleEnabledDefault = _subtitleEnabledDefault.asStateFlow()
+
+    private val _gestureControlsEnabled = MutableStateFlow(prefs.getBoolean("gesture_controls_enabled", true))
+    val gestureControlsEnabled = _gestureControlsEnabled.asStateFlow()
 
     private val _selectedPlaylistSongs = MutableStateFlow<List<MediaEntity>>(emptyList())
     val selectedPlaylistSongs = _selectedPlaylistSongs.asStateFlow()
@@ -142,9 +215,9 @@ class MediaViewModel(
     val loudnessEnhancer = playbackManager.loudnessEnhancerGain
 
     init {
-        // Automatically scan files on creation
+        // Automatically scan files on creation (smart cached startup loads Room instantly)
         viewModelScope.launch {
-            repository.scanLocalMedia()
+            repository.scanLocalMedia(forceScan = false)
         }
 
         // Smart Resume startup automation
@@ -187,7 +260,7 @@ class MediaViewModel(
 
     fun forceScanMedia() {
         viewModelScope.launch {
-            repository.scanLocalMedia()
+            repository.scanLocalMedia(forceScan = true)
         }
     }
 
@@ -195,6 +268,11 @@ class MediaViewModel(
     fun playSongAtIndex(songs: List<MediaEntity>, index: Int) {
         playbackManager.setQueue(songs, index)
         recordPlaybackEvent(songs[index].path)
+    }
+
+    fun playMediaDirectly(media: MediaEntity) {
+        playbackManager.setQueue(listOf(media), 0)
+        playbackManager.play()
     }
 
     fun play() = playbackManager.play()
@@ -272,6 +350,7 @@ class MediaViewModel(
     }
 
     // Queue actions
+    fun playNext(song: MediaEntity) = playbackManager.playNext(song)
     fun addToQueue(song: MediaEntity) = playbackManager.addToQueue(song)
     fun removeFromQueue(songPath: String) = playbackManager.removeFromQueue(songPath)
     fun reorderQueue(from: Int, to: Int) = playbackManager.reorderQueue(from, to)
@@ -306,6 +385,31 @@ class MediaViewModel(
         prefs.edit().putBoolean("smart_resume_enabled", enabled).apply()
     }
 
+    fun setAudioFocusEnabled(enabled: Boolean) {
+        _audioFocusEnabled.value = enabled
+        prefs.edit().putBoolean("audio_focus_enabled", enabled).apply()
+    }
+
+    fun setDefaultPlaybackSpeed(speed: Float) {
+        _defaultPlaybackSpeed.value = speed
+        prefs.edit().putFloat("default_playback_speed", speed).apply()
+    }
+
+    fun setDefaultAspectRatio(mode: String) {
+        _defaultAspectRatio.value = mode
+        prefs.edit().putString("default_aspect_ratio", mode).apply()
+    }
+
+    fun setSubtitleEnabledDefault(enabled: Boolean) {
+        _subtitleEnabledDefault.value = enabled
+        prefs.edit().putBoolean("subtitle_enabled_default", enabled).apply()
+    }
+
+    fun setGestureControlsEnabled(enabled: Boolean) {
+        _gestureControlsEnabled.value = enabled
+        prefs.edit().putBoolean("gesture_controls_enabled", enabled).apply()
+    }
+
     // Subtitle configurations
     fun setSubtitleSize(size: Float) { _subtitleSize.value = size }
     fun setSubtitleColor(color: String) { _subtitleColor.value = color }
@@ -315,6 +419,58 @@ class MediaViewModel(
     // Video Player Custom Speeds & Actions
     fun setVideoPlaybackSpeed(speed: Float) { _videoPlaybackSpeed.value = speed }
     fun setVideoAspectRatio(mode: AspectRatioMode) { _videoAspectRatio.value = mode }
+
+    // Deletion support
+    fun deleteMediaByPath(path: String) {
+        viewModelScope.launch {
+            repository.deleteMediaByPath(path)
+        }
+    }
+
+    fun deleteMediaByPaths(paths: List<String>) {
+        viewModelScope.launch {
+            repository.deleteMediaByPaths(paths)
+        }
+    }
+
+    fun renameMediaByPath(path: String, newTitle: String) {
+        viewModelScope.launch {
+            repository.renameMediaByPath(path, newTitle)
+        }
+    }
+
+    // Hidden Folders settings controllers
+    fun addHiddenFolder(path: String) {
+        viewModelScope.launch {
+            hiddenFolderRepository.insertHiddenFolder(path)
+            forceScanMedia()
+        }
+    }
+
+    fun removeHiddenFolder(path: String) {
+        viewModelScope.launch {
+            hiddenFolderRepository.deleteHiddenFolder(path)
+            forceScanMedia()
+        }
+    }
+
+    // Cache and Database maintenance
+    fun clearCache() {
+        try {
+            val app = getApplication<Application>()
+            app.cacheDir.deleteRecursively()
+            Log.i(TAG, "Cache directories deleted successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear application cache: ${e.message}")
+        }
+    }
+
+    fun performDatabaseMaintenance() {
+        viewModelScope.launch {
+            forceScanMedia()
+            Log.i(TAG, "Database maintenance completed successfully.")
+        }
+    }
 }
 
 enum class AspectRatioMode {
@@ -327,7 +483,12 @@ class MediaViewModelFactory(private val application: Application) : ViewModelPro
         if (modelClass.isAssignableFrom(MediaViewModel::class.java)) {
             val app = application as MediaPlayerApp
             @Suppress("UNCHECKED_CAST")
-            return MediaViewModel(application, app.mediaRepository, app.playbackManager) as T
+            return MediaViewModel(
+                application,
+                app.mediaRepository,
+                app.playbackManager,
+                app.hiddenFolderRepository
+            ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

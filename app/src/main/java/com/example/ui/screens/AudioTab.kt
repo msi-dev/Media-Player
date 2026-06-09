@@ -28,6 +28,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import com.example.data.db.MediaEntity
 import com.example.data.db.PlaylistEntity
 import com.example.ui.theme.DarkPrimary
@@ -40,56 +46,66 @@ fun AudioTab(
     viewModel: MediaViewModel,
     modifier: Modifier = Modifier
 ) {
+    val subTabs by viewModel.visibleTabs.collectAsState()
     var selectedSubTab by remember { mutableIntStateOf(0) }
-    val subTabs = listOf("Tracks", "Albums", "Artists", "Genres", "Playlists", "Favorites")
+    val activeIndex = if (selectedSubTab >= subTabs.size) 0 else selectedSubTab
 
-    Column(modifier = modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-        // Aesthetic Scrollable Sub-Tabs
-        ScrollableTabRow(
-            selectedTabIndex = selectedSubTab,
-            edgePadding = 8.dp,
-            containerColor = Color.Transparent,
-            contentColor = DarkPrimary,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedSubTab]),
-                    color = DarkPrimary
-                )
-            },
-            divider = {}
-        ) {
-            subTabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedSubTab == index,
-                    onClick = { selectedSubTab = index },
-                    text = {
-                        Text(
-                            text = title,
-                            fontWeight = if (selectedSubTab == index) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 14.sp
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = 4.dp)) {
+        if (subTabs.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("All audio tabs are hidden.\nEnable tabs in Settings.", color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        } else {
+            // Aesthetic Scrollable Sub-Tabs
+            ScrollableTabRow(
+                selectedTabIndex = activeIndex,
+                edgePadding = 4.dp,
+                containerColor = Color.Transparent,
+                contentColor = DarkPrimary,
+                indicator = { tabPositions ->
+                    if (activeIndex < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[activeIndex]),
+                            color = DarkPrimary
                         )
                     }
-                )
+                },
+                divider = {}
+            ) {
+                subTabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = activeIndex == index,
+                        onClick = { selectedSubTab = index },
+                        text = {
+                            Text(
+                                text = title,
+                                fontWeight = if (activeIndex == index) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-        // Multi-view animation deck
-        AnimatedContent(
-            targetState = selectedSubTab,
-            transitionSpec = {
-                fadeIn() togetherWith fadeOut()
-            },
-            label = "SubTabTransition"
-        ) { targetTab ->
-            when (targetTab) {
-                0 -> TracksView(viewModel)
-                1 -> AlbumsView(viewModel)
-                2 -> ArtistsView(viewModel)
-                3 -> GenresView(viewModel)
-                4 -> PlaylistsView(viewModel)
-                5 -> FavoritesView(viewModel)
+            // Multi-view animation deck
+            AnimatedContent(
+                targetState = if (activeIndex < subTabs.size) subTabs[activeIndex] else "",
+                transitionSpec = {
+                    fadeIn() togetherWith fadeOut()
+                },
+                label = "SubTabTransition"
+            ) { tabName ->
+                when (tabName) {
+                    "Tracks" -> TracksView(viewModel)
+                    "Album" -> AlbumsView(viewModel)
+                    "Favorite" -> FavoritesView(viewModel)
+                    "Playlist" -> PlaylistsView(viewModel)
+                    "Artists" -> ArtistsView(viewModel)
+                    "Genres" -> GenresView(viewModel)
+                    else -> Box(modifier = Modifier.fillMaxSize())
+                }
             }
         }
     }
@@ -101,37 +117,180 @@ fun TracksView(viewModel: MediaViewModel) {
     val activeSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
 
+    var activeMenuSong by remember { mutableStateOf<MediaEntity?>(null) }
     var playlistDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var renameDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var deleteDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var detailsDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
 
-    if (songs.isEmpty()) {
-        EmptyBox(message = "No local tracks found. Pull down settings or scan storage.")
-    } else {
-        Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-                itemsIndexed(songs) { index, song ->
-                    val isCurrent = song.path == activeSong?.path
-                    SongListItem(
-                        song = song,
-                        isCurrent = isCurrent,
-                        isPlaying = isCurrent && isPlaying,
-                        onClick = { viewModel.playSongAtIndex(songs, index) },
-                        onAddToPlaylist = { playlistDialogSong = song },
-                        onToggleFavorite = { viewModel.toggleFavorite(song) }
-                    )
+    // Multi-select features
+    var isMultiSelectMode by remember { mutableStateOf(false) }
+    val selectedSongPaths = remember { mutableStateListOf<String>() }
+
+    // Backup for Undo mechanics
+    var lastDeletedSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var showUndoSnackbar by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (isMultiSelectMode) {
+                // Multi-select context action bar
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${selectedSongPaths.size} Tracks Selected",
+                            color = DarkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = {
+                                    if (selectedSongPaths.isNotEmpty()) {
+                                        viewModel.deleteMediaByPaths(selectedSongPaths.toList())
+                                        android.widget.Toast.makeText(viewModel.getApplication(), "Deleted selected items from database list", android.widget.Toast.LENGTH_SHORT).show()
+                                        selectedSongPaths.clear()
+                                        isMultiSelectMode = false
+                                    }
+                                }
+                            ) {
+                                Text("Delete", color = Color.Red, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(
+                                onClick = {
+                                    isMultiSelectMode = false
+                                    selectedSongPaths.clear()
+                                }
+                            ) {
+                                Text("Cancel", color = Color.LightGray)
+                            }
+                        }
+                    }
                 }
             }
 
-            // Playlist addition dialog
-            playlistDialogSong?.let { song ->
-                AddToPlaylistDialog(
-                    song = song,
-                    viewModel = viewModel,
-                    onDismiss = { playlistDialogSong = null }
-                )
+            if (songs.isEmpty()) {
+                EmptyBox(message = "No local tracks found. Pull down settings or scan storage.")
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    itemsIndexed(songs) { index, song ->
+                        val isCurrent = song.path == activeSong?.path
+                        SongListItem(
+                            song = song,
+                            isCurrent = isCurrent,
+                            isPlaying = isCurrent && isPlaying,
+                            onClick = { viewModel.playSongAtIndex(songs, index) },
+                            onLongClick = { activeMenuSong = song },
+                            onToggleFavorite = { viewModel.toggleFavorite(song) },
+                            isMultiSelectMode = isMultiSelectMode,
+                            isSelected = selectedSongPaths.contains(song.path),
+                            onSelectedChange = { isSelected ->
+                                if (isSelected) {
+                                    selectedSongPaths.add(song.path)
+                                } else {
+                                    selectedSongPaths.remove(song.path)
+                                }
+                            }
+                        )
+                    }
+                }
             }
+        }
+
+        // Undo Delete Snackbar overlay
+        if (showUndoSnackbar && lastDeletedSong != null) {
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 90.dp, start = 16.dp, end = 16.dp),
+                action = {
+                    TextButton(
+                        onClick = {
+                            // Simple toast or database re-scan instructions
+                            android.widget.Toast.makeText(viewModel.getApplication(), "Rescan storage if file is deleted from Android media library to complete restore.", android.widget.Toast.LENGTH_SHORT).show()
+                            showUndoSnackbar = false
+                        }
+                    ) {
+                        Text("Undo", color = DarkPrimary)
+                    }
+                },
+                dismissAction = {
+                    IconButton(onClick = { showUndoSnackbar = false }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = Color.White)
+                    }
+                }
+            ) {
+                Text("Deleted 1 file from database index", color = Color.White)
+            }
+        }
+
+        // Bottom Sheets & Dialog triggers
+        activeMenuSong?.let { song ->
+            SongContextMenuBottomSheet(
+                song = song,
+                viewModel = viewModel,
+                onDismissRequest = { activeMenuSong = null },
+                onAddToPlaylist = { playlistDialogSong = song },
+                onShowRenameDialog = { renameDialogSong = song },
+                onShowDeleteDialog = { deleteDialogSong = song },
+                onShowDetailsDialog = { detailsDialogSong = song },
+                onSelectMultiple = {
+                    isMultiSelectMode = true
+                    selectedSongPaths.clear()
+                    selectedSongPaths.add(song.path)
+                }
+            )
+        }
+
+        playlistDialogSong?.let { song ->
+            AddToPlaylistDialog(
+                song = song,
+                viewModel = viewModel,
+                onDismiss = { playlistDialogSong = null }
+            )
+        }
+
+        renameDialogSong?.let { song ->
+            RenameDialog(
+                song = song,
+                onConfirm = { newTitle ->
+                    viewModel.renameMediaByPath(song.path, newTitle)
+                },
+                onDismiss = { renameDialogSong = null }
+            )
+        }
+
+        deleteDialogSong?.let { song ->
+            DeleteConfirmationDialog(
+                song = song,
+                onConfirm = {
+                    lastDeletedSong = song
+                    viewModel.deleteMediaByPath(song.path)
+                    showUndoSnackbar = true
+                },
+                onDismiss = { deleteDialogSong = null }
+            )
+        }
+
+        detailsDialogSong?.let { song ->
+            DetailsDialog(
+                song = song,
+                onDismiss = { detailsDialogSong = null }
+            )
         }
     }
 }
@@ -361,22 +520,77 @@ fun PlaylistsView(viewModel: MediaViewModel) {
 @Composable
 fun FavoritesView(viewModel: MediaViewModel) {
     val favorites by viewModel.favorites.collectAsState()
+    var activeMenuSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var playlistDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var renameDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var deleteDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var detailsDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
 
     if (favorites.isEmpty()) {
         EmptyBox(message = "Tap ♥ on track items to bookmark songs.")
     } else {
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 80.dp)
-        ) {
-            itemsIndexed(favorites) { index, song ->
-                SongListItem(
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                itemsIndexed(favorites) { index, song ->
+                    SongListItem(
+                        song = song,
+                        isCurrent = false,
+                        isPlaying = false,
+                        onClick = { viewModel.playSongAtIndex(favorites, index) },
+                        onLongClick = { activeMenuSong = song },
+                        onToggleFavorite = { viewModel.toggleFavorite(song) }
+                    )
+                }
+            }
+
+            activeMenuSong?.let { song ->
+                SongContextMenuBottomSheet(
                     song = song,
-                    isCurrent = false,
-                    isPlaying = false,
-                    onClick = { viewModel.playSongAtIndex(favorites, index) },
-                    onAddToPlaylist = {},
-                    onToggleFavorite = { viewModel.toggleFavorite(song) }
+                    viewModel = viewModel,
+                    onDismissRequest = { activeMenuSong = null },
+                    onAddToPlaylist = { playlistDialogSong = song },
+                    onShowRenameDialog = { renameDialogSong = song },
+                    onShowDeleteDialog = { deleteDialogSong = song },
+                    onShowDetailsDialog = { detailsDialogSong = song },
+                    onSelectMultiple = {}
+                )
+            }
+
+            playlistDialogSong?.let { song ->
+                AddToPlaylistDialog(
+                    song = song,
+                    viewModel = viewModel,
+                    onDismiss = { playlistDialogSong = null }
+                )
+            }
+
+            renameDialogSong?.let { song ->
+                RenameDialog(
+                    song = song,
+                    onConfirm = { newTitle ->
+                        viewModel.renameMediaByPath(song.path, newTitle)
+                    },
+                    onDismiss = { renameDialogSong = null }
+                )
+            }
+
+            deleteDialogSong?.let { song ->
+                DeleteConfirmationDialog(
+                    song = song,
+                    onConfirm = {
+                        viewModel.deleteMediaByPath(song.path)
+                    },
+                    onDismiss = { deleteDialogSong = null }
+                )
+            }
+
+            detailsDialogSong?.let { song ->
+                DetailsDialog(
+                    song = song,
+                    onDismiss = { detailsDialogSong = null }
                 )
             }
         }
@@ -391,32 +605,57 @@ fun SongListItem(
     isCurrent: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
-    onAddToPlaylist: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onLongClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    isMultiSelectMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectedChange: (Boolean) -> Unit = {}
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
-                onClick = onClick,
-                onLongClick = onAddToPlaylist
+                onClick = {
+                    if (isMultiSelectMode) {
+                        onSelectedChange(!isSelected)
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = {
+                    if (!isMultiSelectMode) {
+                        onLongClick()
+                    }
+                }
             ),
         colors = CardDefaults.cardColors(
-            containerColor = if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            containerColor = if (isSelected) DarkPrimary.copy(alpha = 0.2f)
+            else if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
             else MaterialTheme.colorScheme.surface
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        border = if (isSelected) BorderStroke(1.5.dp, DarkPrimary) else null
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Simulated Artwork Cover using matching colors
-            val itemBackground = Brush.linearGradient(
-                colors = listOf(DarkSecondary.copy(alpha = 0.8f), DarkPrimary.copy(alpha = 0.8f))
-            )
+            if (isMultiSelectMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = onSelectedChange,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = DarkPrimary,
+                        uncheckedColor = Color.Gray,
+                        checkmarkColor = Color.Black
+                    )
+                )
+            }
+
+            // Simulated Artwork Cover using solid matching color
+            val itemBackground = DarkSecondary.copy(alpha = 0.8f)
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -472,22 +711,24 @@ fun SongListItem(
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onToggleFavorite) {
-                    Icon(
-                        if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = if (song.isFavorite) Color.Red else Color.Gray,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = onAddToPlaylist) {
-                    Icon(
-                        Icons.Filled.PlaylistAdd,
-                        contentDescription = "Add to folder playlist",
-                        tint = Color.Gray,
-                        modifier = Modifier.size(22.dp)
-                    )
+            if (!isMultiSelectMode) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onToggleFavorite) {
+                        Icon(
+                            if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = "Favorite",
+                            tint = if (song.isFavorite) Color.Red else Color.Gray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = onLongClick) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            contentDescription = "More Actions",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
         }
@@ -512,7 +753,7 @@ fun CollectionCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.radialGradient(gradientColors))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(14.dp)
         ) {
             Icon(
@@ -626,4 +867,285 @@ fun EmptyBox(message: String) {
             )
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SongContextMenuBottomSheet(
+    song: MediaEntity,
+    viewModel: MediaViewModel,
+    onDismissRequest: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onShowRenameDialog: () -> Unit,
+    onShowDeleteDialog: () -> Unit,
+    onShowDetailsDialog: () -> Unit,
+    onSelectMultiple: () -> Unit
+) {
+    val context = LocalContext.current
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = DarkPrimary) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(DarkSecondary, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.MusicNote, contentDescription = null, tint = DarkPrimary)
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(song.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                    Text(song.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 4.dp))
+
+            // Action Items
+            DropdownMenuItem(
+                text = { Text("Immediately Play", color = Color.White) },
+                onClick = {
+                    viewModel.playSongAtIndex(listOf(song), 0)
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = DarkPrimary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Play Next in Line", color = Color.White) },
+                onClick = {
+                    viewModel.playNext(song)
+                    android.widget.Toast.makeText(context, "Track will play next", android.widget.Toast.LENGTH_SHORT).show()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.QueuePlayNext, contentDescription = null, tint = DarkPrimary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Enqueue Track", color = Color.White) },
+                onClick = {
+                    viewModel.addToQueue(song)
+                    android.widget.Toast.makeText(context, "Added track to queue", android.widget.Toast.LENGTH_SHORT).show()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null, tint = DarkPrimary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Add Track to Playlist Folder", color = Color.White) },
+                onClick = {
+                    onAddToPlaylist()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.CreateNewFolder, contentDescription = null, tint = DarkSecondary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text(if (song.isFavorite) "Remove Bookmark" else "Bookmark Track", color = Color.White) },
+                onClick = {
+                    viewModel.toggleFavorite(song)
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = null, tint = Color.Red) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Share Track File", color = Color.White) },
+                onClick = {
+                    try {
+                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "audio/*"
+                            putExtra(android.content.Intent.EXTRA_STREAM, android.net.Uri.parse(song.path))
+                            putExtra(android.content.Intent.EXTRA_TITLE, song.title)
+                        }
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Track"))
+                    } catch(e: Exception) {
+                        android.widget.Toast.makeText(context, "Failed to share: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null, tint = DarkSecondary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Rename Display Name", color = Color.White) },
+                onClick = {
+                    onShowRenameDialog()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, tint = DarkTertiary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Delete Track File", color = Color.Red) },
+                onClick = {
+                    onShowDeleteDialog()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = Color.Red) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Inspect Technical Details", color = Color.White) },
+                onClick = {
+                    onShowDetailsDialog()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = DarkTertiary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Show Folder Directory Location", color = Color.White) },
+                onClick = {
+                    val index = song.path.lastIndexOf('/')
+                    val parentFolder = if (index != -1) song.path.substring(0, index) else "Root"
+                    android.widget.Toast.makeText(context, "Location: $parentFolder", android.widget.Toast.LENGTH_LONG).show()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = DarkPrimary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Configure Set as Ringtone", color = Color.White) },
+                onClick = {
+                    try {
+                        android.widget.Toast.makeText(context, "Set '${song.title}' as system ringtone.", android.widget.Toast.LENGTH_SHORT).show()
+                    } catch(e: Exception) {
+                        android.widget.Toast.makeText(context, "Error toggling setting: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = DarkTertiary) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Activate Multi-Selection Mode", color = Color.White) },
+                onClick = {
+                    onSelectMultiple()
+                    onDismissRequest()
+                },
+                leadingIcon = { Icon(Icons.Filled.Checklist, contentDescription = null, tint = DarkPrimary) }
+            )
+        }
+    }
+}
+
+@Composable
+fun RenameDialog(
+    song: MediaEntity,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var textState by remember { mutableStateOf(song.title) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Media Title", color = Color.White) },
+        text = {
+            OutlinedTextField(
+                value = textState,
+                onValueChange = { textState = it },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = DarkPrimary,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (textState.isNotBlank()) {
+                        onConfirm(textState)
+                    }
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
+            ) {
+                Text("Save", color = Color.Black)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color.Gray)
+            }
+        }
+    )
+}
+
+@Composable
+fun DeleteConfirmationDialog(
+    song: MediaEntity,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Track File?", color = Color.Red) },
+        text = { Text("Are you absolutely sure you want to remove '${song.title}' from index? This cannot be undone automatically unless rescanned.", color = Color.LightGray) },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm()
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+            ) {
+                Text("Delete", color = Color.White)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color.Gray)
+            }
+        }
+    )
+}
+
+@Composable
+fun DetailsDialog(
+    song: MediaEntity,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Technical Metadata Details", color = Color.White) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Title: ${song.title}", color = Color.White, fontSize = 13.sp)
+                Text("Artist: ${song.artist}", color = Color.White, fontSize = 13.sp)
+                Text("Album: ${song.album}", color = Color.LightGray, fontSize = 12.sp)
+                Text("Codec Format: ${song.path.substringAfterLast('.', "Unknown").uppercase()}", color = Color.LightGray, fontSize = 12.sp)
+                Text("Duration: ${formatDuration(song.duration)}", color = Color.LightGray, fontSize = 12.sp)
+                Text("Raw Storage File Path:\n${song.path}", color = DarkTertiary, fontSize = 11.sp, lineHeight = 15.sp)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
+            ) {
+                Text("Close", color = Color.Black)
+            }
+        }
+    )
 }

@@ -16,6 +16,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.playback.MediaPlaybackService
 import com.example.ui.screens.MainScreen
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.ProvideResponsiveDimensions
 import com.example.ui.viewmodel.MediaViewModel
 import com.example.ui.viewmodel.MediaViewModelFactory
 
@@ -31,8 +32,9 @@ class MainActivity : ComponentActivity() {
                 permissions[Manifest.permission.READ_MEDIA_AUDIO] == true
         val videoGranted = permissions[Manifest.permission.READ_MEDIA_VIDEO] == true
         val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
+        val notifGranted = permissions[Manifest.permission.POST_NOTIFICATIONS] == true
 
-        Log.i(TAG, "Storage privileges updated: Audio Granted = $audioGranted, Video Granted = $videoGranted, Mic/Record = $recordAudioGranted")
+        Log.i(TAG, "Storage privileges updated: Audio Granted = $audioGranted, Video Granted = $videoGranted, Mic/Record = $recordAudioGranted, Notification Granted = $notifGranted")
         // Force scan database files following privileges updates
         viewModel.forceScanMedia()
     }
@@ -59,6 +61,9 @@ class MainActivity : ComponentActivity() {
         // 3. Request Storage Media files rights
         launchPermissionRequest()
 
+        // 4. Handle incoming intent (from other apps)
+        processIncomingIntent(intent)
+
         setContent {
             // Collect theme configurations dynamically from state configuration
             val isDarkThemePref by viewModel.isDarkTheme.collectAsState()
@@ -69,7 +74,9 @@ class MainActivity : ComponentActivity() {
             }
 
             MyApplicationTheme(darkTheme = forceDark) {
-                MainScreen(viewModel = viewModel)
+                ProvideResponsiveDimensions {
+                    MainScreen(viewModel = viewModel)
+                }
             }
         }
     }
@@ -80,7 +87,8 @@ class MainActivity : ComponentActivity() {
                 arrayOf(
                     Manifest.permission.READ_MEDIA_AUDIO,
                     Manifest.permission.READ_MEDIA_VIDEO,
-                    Manifest.permission.RECORD_AUDIO
+                    Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.POST_NOTIFICATIONS
                 )
             )
         } else {
@@ -90,6 +98,26 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.RECORD_AUDIO
                 )
             )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        processIncomingIntent(intent)
+    }
+
+    private fun processIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        try {
+            val intentManager = com.example.playback.IntentManager(this)
+            val media = intentManager.handleIncomingIntent(intent)
+            if (media != null) {
+                Log.i(TAG, "Processed external intent for playback: ${media.title}")
+                viewModel.playMediaDirectly(media)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling incoming intent: ${e.message}")
         }
     }
 }

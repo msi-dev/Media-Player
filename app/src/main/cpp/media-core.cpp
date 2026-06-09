@@ -9,7 +9,7 @@
 extern "C" {
 
 JNIEXPORT jstring JNICALL
-Java_com_example_mediaplayer_ndk_NativeMediaBridge_detectFormatNative(
+Java_com_example_ndk_NativeMediaBridge_detectFormatNative(
         JNIEnv* env,
         jobject thiz,
         jstring file_path) {
@@ -39,7 +39,7 @@ Java_com_example_mediaplayer_ndk_NativeMediaBridge_detectFormatNative(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_example_mediaplayer_ndk_NativeMediaBridge_isFormatSupportedNative(
+Java_com_example_ndk_NativeMediaBridge_isFormatSupportedNative(
         JNIEnv* env,
         jobject thiz,
         jstring format) {
@@ -74,7 +74,7 @@ Java_com_example_mediaplayer_ndk_NativeMediaBridge_isFormatSupportedNative(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_example_mediaplayer_ndk_NativeMediaBridge_getNativeOptimizationProfile(
+Java_com_example_ndk_NativeMediaBridge_getNativeOptimizationProfileNative(
         JNIEnv* env,
         jobject thiz) {
     // Media performance profile optimizes buffer sizes based on architecture

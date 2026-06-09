@@ -19,6 +19,9 @@ class MediaPlaybackService : MediaSessionService() {
         Log.i(TAG, "Starting foreground MediaSession lifecycle service...")
         
         try {
+            // Register modern notification channels
+            NotificationManager.createNotificationChannel(this)
+
             val app = application as MediaPlayerApp
             val player = app.playbackManager.player
 
@@ -52,7 +55,6 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onDestroy() {
         Log.i(TAG, "Disposing MediaSession background service...")
         mediaSession?.run {
-            player.release()
             release()
             mediaSession = null
         }

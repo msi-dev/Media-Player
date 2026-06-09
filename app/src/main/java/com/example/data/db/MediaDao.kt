@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MediaDao {
+    @Query("SELECT COUNT(*) FROM media_items")
+    suspend fun getMediaCount(): Int
+
     @Query("SELECT * FROM media_items ORDER BY title ASC")
     fun getAllMedia(): Flow<List<MediaEntity>>
 
@@ -38,6 +41,15 @@ interface MediaDao {
 
     @Query("UPDATE media_items SET lastPlayedPosition = :position WHERE path = :path")
     suspend fun updateLastPlayedPosition(path: String, position: Long)
+
+    @Query("UPDATE media_items SET title = :newTitle WHERE path = :path")
+    suspend fun renameMediaByPath(path: String, newTitle: String)
+
+    @Query("DELETE FROM media_items WHERE path = :path")
+    suspend fun deleteMediaByPath(path: String)
+
+    @Query("DELETE FROM media_items WHERE path IN (:paths)")
+    suspend fun deleteMediaByPaths(paths: List<String>)
 
     // Playlists
     @Query("SELECT * FROM playlists ORDER BY name ASC")

@@ -15,7 +15,8 @@ import kotlinx.coroutines.withContext
 
 class MediaRepository(
     private val context: Context,
-    private val mediaDao: MediaDao
+    private val mediaDao: MediaDao,
+    private val hiddenFolderDao: com.example.data.db.HiddenFolderDao
 ) {
     private val TAG = "MediaRepository"
 
@@ -36,6 +37,18 @@ class MediaRepository(
 
     suspend fun updateLastPlayedPosition(path: String, position: Long) {
         mediaDao.updateLastPlayedPosition(path, position)
+    }
+
+    suspend fun deleteMediaByPath(path: String) {
+        mediaDao.deleteMediaByPath(path)
+    }
+
+    suspend fun deleteMediaByPaths(paths: List<String>) {
+        mediaDao.deleteMediaByPaths(paths)
+    }
+
+    suspend fun renameMediaByPath(path: String, newTitle: String) {
+        mediaDao.renameMediaByPath(path, newTitle)
     }
 
     // Playlists
@@ -62,9 +75,28 @@ class MediaRepository(
     /**
      * Performs scan of local system using MediaStore, with auto-injection of demo files if empty.
      */
-    suspend fun scanLocalMedia() = withContext(Dispatchers.IO) {
-        Log.i(TAG, "Starting storage media scan...")
+    suspend fun scanLocalMedia(forceScan: Boolean = false) = withContext(Dispatchers.IO) {
+        if (!forceScan) {
+            val cachedCount = try {
+                mediaDao.getMediaCount()
+            } catch (e: Exception) {
+                0
+            }
+            if (cachedCount > 0) {
+                Log.i(TAG, "Instant load: Database cache holds $cachedCount items. Skipping redundant filesystem crawl.")
+                return@withContext
+            }
+        }
+
+        Log.i(TAG, "Starting storage media scan with hidden folders check...")
         val foundMedia = mutableListOf<MediaEntity>()
+
+        val hiddenFolders = try {
+            hiddenFolderDao.getAllHiddenFolders().map { it.folderPath }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load hidden folders from database: ${e.message}")
+            emptyList<String>()
+        }
 
         // 1. Scan Audio
         try {
@@ -92,6 +124,12 @@ class MediaRepository(
 
                 while (cursor.moveToNext()) {
                     val path = cursor.getString(dataIndex)
+                    
+                    // Skip hidden folder media items
+                    if (hiddenFolders.any { path.startsWith(it) }) {
+                        continue
+                    }
+
                     val format = NativeMediaBridge.detectFormat(path)
                     
                     // Verify if format is supported natively
@@ -142,6 +180,12 @@ class MediaRepository(
 
                 while (cursor.moveToNext()) {
                     val path = cursor.getString(dataIndex)
+
+                    // Skip hidden folder media items
+                    if (hiddenFolders.any { path.startsWith(it) }) {
+                        continue
+                    }
+
                     val format = NativeMediaBridge.detectFormat(path)
 
                     if (NativeMediaBridge.isFormatSupported(format)) {

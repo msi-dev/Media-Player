@@ -46,7 +46,7 @@ class PlaybackManager(private val context: Context) {
     val player: ExoPlayer = run {
         val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
             .setUsage(androidx.media3.common.C.USAGE_MEDIA)
-            .setContentType(androidx.media3.common.C.CONTENT_TYPE_MUSIC)
+            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
         ExoPlayer.Builder(context)
             .setAudioAttributes(audioAttributes, true) // Automatically handles audio focus (ducking, pause, resume)
@@ -149,7 +149,8 @@ class PlaybackManager(private val context: Context) {
                 } else {
                      _currentSong.value?.let { song ->
                          scope.launch(Dispatchers.IO) {
-                             repository.recordPlayback(song.path, player.currentPosition)
+                             val currentPos = if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) player.currentPosition else 0L
+                             repository.recordPlayback(song.path, currentPos)
                          }
                      }
                 }
@@ -190,7 +191,23 @@ class PlaybackManager(private val context: Context) {
                     }
                 }
             }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Log.e(TAG, "ExoPlayer Error Listener event detected: ${error.message} (code: ${error.errorCode})", error)
+                attemptRecovery(error)
+            }
         })
+    }
+
+    private fun attemptRecovery(error: androidx.media3.common.PlaybackException) {
+        Log.w(TAG, "Attempting player error state recovery...")
+        try {
+            player.prepare()
+            player.play()
+        } catch (e: Exception) {
+            Log.e(TAG, "Critical: Error recovery plan aborted. Skipping track to avoid hard loop.", e)
+            playNext()
+        }
     }
 
     private fun initializeAudioEffects() {
@@ -430,6 +447,22 @@ class PlaybackManager(private val context: Context) {
     }
 
     // Queue modification utilities
+    fun playNext(song: MediaEntity) {
+        val currentQueue = _playbackQueue.value.toMutableList()
+        var currentIndex = player.currentMediaItemIndex
+        if (currentIndex < 0) currentIndex = 0
+        
+        val insertIndex = (currentIndex + 1).coerceAtMost(currentQueue.size)
+        currentQueue.add(insertIndex, song)
+        _playbackQueue.value = currentQueue
+
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(song.path)
+            .setUri(if (song.path.startsWith("asset:///")) Uri.parse("file:///android_asset/${song.path.substring("asset:///".length)}") else Uri.parse(song.path))
+            .build()
+        player.addMediaItem(insertIndex, mediaItem)
+    }
+
     fun addToQueue(song: MediaEntity) {
         val currentQueue = _playbackQueue.value.toMutableList()
         currentQueue.add(song)
