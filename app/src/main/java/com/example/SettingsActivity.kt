@@ -661,32 +661,38 @@ fun SettingsContent(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Checkbox(
-                                        checked = isVisible,
-                                        onCheckedChange = { checked ->
-                                            val currentVisible = visibleTabs.toMutableList()
-                                            if (checked) {
-                                                if (!currentVisible.contains(tabName)) {
-                                                    currentVisible.add(tabName)
-                                                }
-                                            } else {
-                                                currentVisible.remove(tabName)
-                                            }
-                                            viewModel.saveVisibleTabs(currentVisible)
-                                        }
-                                    )
-                                    Text(
-                                        text = tabName,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+                            val onToggle = {
+                                val currentVisible = visibleTabs.toMutableList()
+                                if (isVisible) {
+                                    currentVisible.remove(tabName)
+                                } else {
+                                    if (!currentVisible.contains(tabName)) {
+                                        currentVisible.add(tabName)
+                                    }
                                 }
+                                viewModel.saveVisibleTabs(currentVisible)
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onToggle() }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = isVisible,
+                                    onCheckedChange = { onToggle() }
+                                )
+                                Text(
+                                    text = tabName,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -890,18 +896,19 @@ fun SettingsContent(
                     } else {
                         physicalFolders.forEach { folderPath ->
                             val isHidden = hiddenFolderPaths.contains(folderPath)
+                            val onFolderToggle = {
+                                if (isHidden) {
+                                    viewModel.removeHiddenFolder(folderPath)
+                                } else {
+                                    viewModel.addHiddenFolder(folderPath)
+                                }
+                            }
 
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        if (isHidden) {
-                                            viewModel.removeHiddenFolder(folderPath)
-                                        } else {
-                                            viewModel.addHiddenFolder(folderPath)
-                                        }
-                                    }
+                                    .clickable { onFolderToggle() }
                                     .background(
                                         if (isHidden) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
@@ -911,13 +918,7 @@ fun SettingsContent(
                             ) {
                                 Checkbox(
                                     checked = isHidden,
-                                    onCheckedChange = { checked ->
-                                        if (checked) {
-                                            viewModel.addHiddenFolder(folderPath)
-                                        } else {
-                                            viewModel.removeHiddenFolder(folderPath)
-                                        }
-                                    },
+                                    onCheckedChange = { onFolderToggle() },
                                     colors = CheckboxDefaults.colors(
                                         checkedColor = MaterialTheme.colorScheme.error,
                                         uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)

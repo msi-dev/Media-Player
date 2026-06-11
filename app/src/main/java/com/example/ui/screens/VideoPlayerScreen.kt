@@ -419,6 +419,46 @@ fun VideoPlayerScreen(
                         )
                     }
 
+                    // Interactive Volume Slider control
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (currentVolume == 0f) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                            contentDescription = "Volume",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Slider(
+                            value = currentVolume,
+                            onValueChange = { newVal ->
+                                currentVolume = newVal
+                                audioManager.setStreamVolume(
+                                    AudioManager.STREAM_MUSIC,
+                                    newVal.roundToInt(),
+                                    0
+                                )
+                            },
+                            valueRange = 0f..maxVolume,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = DarkPrimary,
+                                activeTrackColor = DarkPrimary,
+                                inactiveTrackColor = Color.DarkGray
+                            )
+                        )
+                        Text(
+                            text = "${((currentVolume / maxVolume) * 100).roundToInt()}%",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(36.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,

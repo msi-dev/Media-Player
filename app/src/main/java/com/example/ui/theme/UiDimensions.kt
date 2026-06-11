@@ -29,6 +29,9 @@ data class UiDimensions(
     val cardHeightMedium: Dp = 110.dp,
     val cardHeightLarge: Dp = 140.dp,
     
+    val albumArtSize: Dp = 180.dp,
+    val fullscreenPlayerPadding: Dp = 24.dp,
+    
     val textTitleLarge: TextUnit = 20.sp,
     val textBodyLarge: TextUnit = 16.sp,
     val textBodyMedium: TextUnit = 14.sp,
@@ -71,6 +74,8 @@ fun ProvideResponsiveDimensions(content: @Composable () -> Unit) {
                 cardHeightCompact = 80.dp,
                 cardHeightMedium = 120.dp,
                 cardHeightLarge = 160.dp,
+                albumArtSize = 220.dp,
+                fullscreenPlayerPadding = 32.dp,
                 textTitleLarge = 22.sp,
                 textBodyLarge = 16.sp,
                 textBodyMedium = 14.sp,
@@ -94,6 +99,8 @@ fun ProvideResponsiveDimensions(content: @Composable () -> Unit) {
                 cardHeightCompact = 75.dp,
                 cardHeightMedium = 110.dp,
                 cardHeightLarge = 140.dp,
+                albumArtSize = 160.dp,
+                fullscreenPlayerPadding = 20.dp,
                 textTitleLarge = 18.sp,
                 textBodyLarge = 15.sp,
                 textBodyMedium = 13.sp,
@@ -102,8 +109,12 @@ fun ProvideResponsiveDimensions(content: @Composable () -> Unit) {
             )
         }
         else -> {
-            // Compact / Modern Phones (FHD, QHD, etc.): keep standard precise Material 3 scale to prevent double-scaling and text crop
-            val scaleFactor = 1.0f
+            // Compact / Modern Phones (FHD, QHD, etc.): calculate factor based on small screen size and low DPI
+            val scaleFactor = when {
+                screenWidth < 360 || density < 2.2f -> 0.82f // Low DPI or extremely compact device
+                density >= 3.5f -> 1.05f // High DPI/flagship device
+                else -> 1.0f // Standard Mobile DPI
+            }
             UiDimensions(
                 paddingSmall = (8 * scaleFactor).dp,
                 paddingMedium = (16 * scaleFactor).dp,
@@ -118,6 +129,8 @@ fun ProvideResponsiveDimensions(content: @Composable () -> Unit) {
                 cardHeightCompact = (80 * scaleFactor).dp,
                 cardHeightMedium = (110 * scaleFactor).dp,
                 cardHeightLarge = (145 * scaleFactor).dp,
+                albumArtSize = (180 * scaleFactor).dp,
+                fullscreenPlayerPadding = (24 * scaleFactor).dp,
                 textTitleLarge = (20 * scaleFactor).sp,
                 textBodyLarge = (16 * scaleFactor).sp,
                 textBodyMedium = (14 * scaleFactor).sp,

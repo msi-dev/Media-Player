@@ -1,6 +1,7 @@
 package com.example.playback
 
 import android.content.Context
+import android.content.Intent
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -272,6 +273,12 @@ class PlaybackManager(private val context: Context) {
     }
 
     fun play() {
+        try {
+            val serviceIntent = Intent(context, MediaPlaybackService::class.java)
+            context.startService(serviceIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed startService in PlaybackManager.play: ${e.message}")
+        }
         player.play()
     }
 
@@ -492,6 +499,12 @@ class PlaybackManager(private val context: Context) {
         Collections.swap(currentQueue, fromIndex, toIndex)
         _playbackQueue.value = currentQueue
         player.moveMediaItem(fromIndex, toIndex)
+    }
+
+    fun clearQueue() {
+        _playbackQueue.value = emptyList()
+        player.clearMediaItems()
+        _currentSong.value = null
     }
 
     fun release() {

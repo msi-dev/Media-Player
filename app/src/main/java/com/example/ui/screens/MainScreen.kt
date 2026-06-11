@@ -5,6 +5,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.db.MediaEntity
+import com.example.ui.components.AlbumArtImage
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.theme.DarkTertiary
@@ -42,8 +45,18 @@ fun MainScreen(
     viewModel: MediaViewModel
 ) {
     val context = LocalContext.current
+    val tabs = remember { listOf("Audio", "Video", "Folders") }
     var activeTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Audio", "Video", "Folders")
+    
+    val safeActiveTab = remember(activeTab, tabs) {
+        if (activeTab >= tabs.size && tabs.isNotEmpty()) {
+            tabs.size - 1
+        } else if (activeTab < 0) {
+            0
+        } else {
+            activeTab
+        }
+    }
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -74,13 +87,13 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(48.dp))
 
                 tabs.forEachIndexed { index, label ->
-                    val icon = when (index) {
-                        0 -> Icons.Filled.Audiotrack
-                        1 -> Icons.Filled.Videocam
+                    val icon = when (label) {
+                        "Audio" -> Icons.Filled.Audiotrack
+                        "Video" -> Icons.Filled.Videocam
                         else -> Icons.Filled.Folder
                     }
                     NavigationRailItem(
-                        selected = activeTab == index,
+                        selected = safeActiveTab == index,
                         onClick = { activeTab = index },
                         icon = { Icon(icon, contentDescription = label) },
                         label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp) },
@@ -114,19 +127,23 @@ fun MainScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { viewModel.search(it) },
-                    placeholder = { Text("Search tracks, videos, genres...", fontSize = 12.sp, color = Color.Gray) },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search", modifier = Modifier.size(16.dp), tint = Color.Gray) },
+                    placeholder = { Text("Search tracks, videos, genres...", fontSize = 13.sp, color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search", modifier = Modifier.size(18.dp), tint = Color.Gray) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.search("") }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp), tint = Color.Gray)
+                                Icon(Icons.Filled.Close, contentDescription = "Clear", modifier = Modifier.size(18.dp), tint = Color.Gray)
                             }
                         }
                     },
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = 13.sp,
+                        color = Color.White
+                    ),
                     modifier = Modifier
                         .weight(1f)
-                        .height(46.dp),
-                    shape = RoundedCornerShape(24.dp),
+                        .height(54.dp),
+                    shape = RoundedCornerShape(27.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = DarkPrimary,
                         unfocusedBorderColor = Color.DarkGray,
@@ -143,13 +160,13 @@ fun MainScreen(
                         val intent = Intent(context, com.example.SettingsActivity::class.java)
                         context.startActivity(intent)
                     },
-                    modifier = Modifier.size(46.dp)
+                    modifier = Modifier.size(54.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Settings,
                         contentDescription = "Settings",
                         tint = DarkPrimary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             }
@@ -158,49 +175,52 @@ fun MainScreen(
 
             // active screens mapping
             Box(modifier = Modifier.weight(1f)) {
-                when (activeTab) {
-                    0 -> AudioTab(viewModel)
-                    1 -> VideoTab(viewModel)
+                val activeTabLabel = if (safeActiveTab < tabs.size) tabs[safeActiveTab] else "Audio"
+                when (activeTabLabel) {
+                    "Audio" -> AudioTab(viewModel)
+                    "Video" -> VideoTab(viewModel)
                     else -> FolderTab(viewModel)
                 }
+            }
 
-                // Pinned visual Mini-Player deck
-                if (currentSong != null) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = if (isWideScreen) 12.dp else 0.dp)
-                            .padding(horizontal = if (isWideScreen) 16.dp else 0.dp)
-                    ) {
-                        MiniPlayerCard(
-                            song = currentSong!!,
-                            isPlaying = isPlaying,
-                            viewModel = viewModel,
-                            onClick = { isPlayerExpanded = true }
-                        )
-                    }
+            // Pinned visual Mini-Player deck (positioned structurally above the bottom navigation bar)
+            if (currentSong != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = if (isWideScreen) 16.dp else 12.dp)
+                        .padding(bottom = 8.dp)
+                ) {
+                    MiniPlayerCard(
+                        song = currentSong!!,
+                        isPlaying = isPlaying,
+                        viewModel = viewModel,
+                        onClick = { isPlayerExpanded = true }
+                    )
                 }
             }
 
             // Bottom NavigationBar for standard phones
             if (!isWideScreen) {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = Color.Transparent,
                     contentColor = DarkPrimary,
                     windowInsets = WindowInsets.navigationBars,
-                    modifier = Modifier.height(58.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(76.dp)
                 ) {
                     tabs.forEachIndexed { index, label ->
-                        val icon = when (index) {
-                            0 -> Icons.Filled.MusicNote
-                            1 -> Icons.Filled.Videocam
+                        val icon = when (label) {
+                            "Audio" -> Icons.Filled.MusicNote
+                            "Video" -> Icons.Filled.Videocam
                             else -> Icons.Filled.Folder
                         }
                         NavigationBarItem(
-                            selected = activeTab == index,
+                            selected = safeActiveTab == index,
                             onClick = { activeTab = index },
-                            icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp)) },
-                            label = { Text(label, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 0.3.sp) },
+                            icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(24.dp)) },
+                            label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 0.3.sp) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = DarkPrimary,
@@ -271,21 +291,13 @@ fun MiniPlayerCard(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    val coverBg = Brush.linearGradient(listOf(DarkSecondary, DarkPrimary))
-                    Box(
+                    AlbumArtImage(
+                        songPath = song.path,
+                        songTitle = song.title,
                         modifier = Modifier
                             .size(38.dp)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(coverBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.MusicNote,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             song.title,
@@ -361,7 +373,8 @@ fun FullscreenPlayerSheet(
     var showSleepTimerPicker by remember { mutableStateOf(false) }
     val queue by viewModel.playbackQueue.collectAsState()
 
-    var showQueueDrawer by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
+    var showEqualizerDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -375,12 +388,13 @@ fun FullscreenPlayerSheet(
                 .background(Color.Black)
         )
 
+        val dims = com.example.ui.theme.ResponsiveDimensions.dimensions
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(24.dp),
+                .padding(dims.fullscreenPlayerPadding),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -412,86 +426,40 @@ fun FullscreenPlayerSheet(
                     }
                 }
 
-                IconButton(onClick = { showQueueDrawer = !showQueueDrawer }) {
-                    Icon(Icons.Filled.QueuePlayNext, contentDescription = "Queue Drawer", tint = if (showQueueDrawer) DarkPrimary else Color.White)
+                IconButton(onClick = { showQueueSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.PlaylistPlay,
+                        contentDescription = "Queue Overlay Sheet",
+                        tint = if (showQueueSheet) DarkPrimary else Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
                 }
             }
 
-            if (showQueueDrawer) {
-                // Queue drag reordering manager view
-                Card(
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.65f)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Playback Queue (${queue.size} Tracks)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Spacer(modifier = Modifier.height(10.dp))
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            itemsIndexed(queue) { idx, item ->
-                                val active = item.path == song.path
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { viewModel.playSongAtIndex(queue, idx) }
-                                        .background(
-                                            if (active) DarkPrimary.copy(alpha = 0.15f) else Color.Transparent,
-                                            shape = RoundedCornerShape(6.dp)
-                                        )
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = if (active) DarkPrimary else Color.Gray, modifier = Modifier.size(16.dp))
-                                        Text(item.title, color = if (active) DarkPrimary else Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    IconButton(onClick = { viewModel.removeFromQueue(item.path) }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Filled.Delete, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Large Glowing Album Art Card with AudioVisualizer
-                Column(
+            // Large Glowing Album Art Card with AudioVisualizer
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                AlbumArtImage(
+                    songPath = song.path,
+                    songTitle = song.title,
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    val coverBg = MaterialTheme.colorScheme.surfaceVariant
-                    Box(
-                        modifier = Modifier
-                            .size(180.dp)
-                            .clip(CircleShape)
-                            .background(coverBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.Album,
-                            contentDescription = "Vinyl",
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.fillMaxSize(0.6f)
-                        )
-                    }
+                        .size(dims.albumArtSize)
+                        .clip(RoundedCornerShape(24.dp))
+                )
 
-                    // Dynamic wave spectrum visualization
-                    AudioVisualizer(
-                        viewModel = viewModel,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp)
-                            .padding(horizontal = 16.dp)
-                    )
-                }
+                // Dynamic wave spectrum visualization
+                AudioVisualizer(
+                    viewModel = viewModel,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(horizontal = 16.dp)
+                )
             }
 
             // Titles & Artist Card
@@ -578,25 +546,42 @@ fun FullscreenPlayerSheet(
                 }
 
                 // Skip previous (enlarged)
-                IconButton(onClick = { viewModel.playPrevious() }) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(48.dp))
+                IconButton(
+                    onClick = { viewModel.playPrevious() },
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SkipPrevious,
+                        contentDescription = "Previous",
+                        tint = Color.White,
+                        modifier = Modifier.size(44.dp)
+                    )
                 }
 
                 // Core play pause trigger (enlarged)
                 IconButton(
-                    onClick = { if (isPlaying) viewModel.pause() else viewModel.play() }
+                    onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
+                    modifier = Modifier.size(96.dp)
                 ) {
                     Icon(
-                        if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                        imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                         contentDescription = "PlayPause",
                         tint = DarkPrimary,
-                        modifier = Modifier.size(82.dp)
+                        modifier = Modifier.size(90.dp)
                     )
                 }
 
                 // Skip next (enlarged)
-                IconButton(onClick = { viewModel.playNext() }) {
-                    Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(48.dp))
+                IconButton(
+                    onClick = { viewModel.playNext() },
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SkipNext,
+                        contentDescription = "Next",
+                        tint = Color.White,
+                        modifier = Modifier.size(44.dp)
+                    )
                 }
 
                 // Repeat Modes toggles
@@ -616,29 +601,40 @@ fun FullscreenPlayerSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Timers & speed controllers footer
+            // Timers, speed, & equalizer controllers footer
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(12.dp))
-                    .padding(vertical = 8.dp, horizontal = 16.dp),
+                    .padding(vertical = 8.dp, horizontal = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.clickable {
                         showSpeedDialog = true
                     }
                 ) {
                     Icon(Icons.Filled.SlowMotionVideo, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(16.dp))
-                    Text("Speed: ${playbackSpeed}x", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Speed: ${playbackSpeed}x", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.clickable {
+                        showEqualizerDialog = true
+                    }
+                ) {
+                    Icon(Icons.Filled.Equalizer, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(16.dp))
+                    Text("Equalizer", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.clickable {
                         if (timerRemaining > 0) {
                             viewModel.setSleepTimer(0) // Cancel if already active
@@ -649,9 +645,9 @@ fun FullscreenPlayerSheet(
                 ) {
                     Icon(Icons.Filled.Alarm, contentDescription = null, tint = if (timerRemaining > 0) DarkTertiary else Color.Gray, modifier = Modifier.size(16.dp))
                     Text(
-                        text = if (timerRemaining > 0) "Sleep: ${formatDuration(timerRemaining)}" else "Sleep off",
+                        text = if (timerRemaining > 0) formatDuration(timerRemaining) else "Sleep off",
                         color = Color.White,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -695,6 +691,105 @@ fun FullscreenPlayerSheet(
                 }
             },
             containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
+
+    // Modern Interactive Parametric Equalizer Dialog
+    if (showEqualizerDialog) {
+        val eqActive by viewModel.eqEnabled.collectAsState()
+        val bands by viewModel.eqBands.collectAsState()
+        val frequencies = listOf("60Hz", "230Hz", "910Hz", "4kHz", "14kHz")
+        
+        AlertDialog(
+            onDismissRequest = { showEqualizerDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Filled.Equalizer, contentDescription = null, tint = DarkPrimary)
+                        Text("Equalizer", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.White)
+                    }
+                    Switch(
+                        checked = eqActive,
+                        onCheckedChange = { viewModel.toggleEqualizer(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DarkPrimary,
+                            checkedTrackColor = DarkPrimary.copy(alpha = 0.4f)
+                        )
+                    )
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (eqActive) {
+                        bands.forEachIndexed { idx, sliderVal ->
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = frequencies.getOrElse(idx) { "Band ${idx + 1}" },
+                                        color = Color.LightGray,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "${if (sliderVal >= 0) "+" else ""}${sliderVal} dB",
+                                        color = DarkPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                                Slider(
+                                    value = sliderVal.toFloat(),
+                                    onValueChange = { newVal ->
+                                        viewModel.setEqualizerBand(idx, newVal.toInt())
+                                    },
+                                    valueRange = -15f..15f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = DarkPrimary,
+                                        activeTrackColor = DarkPrimary,
+                                        inactiveTrackColor = Color.DarkGray
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(130.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Toggle active hardware frequencies on the top right to customize your ambient theater acoustics.",
+                                color = Color.Gray,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showEqualizerDialog = false }) {
+                    Text("Done", color = DarkPrimary, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(20.dp)
         )
     }
 
@@ -751,6 +846,168 @@ fun FullscreenPlayerSheet(
             },
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
+    }
+
+    if (showQueueSheet) {
+        QueueOverlayBottomSheet(
+            queue = queue,
+            currentSong = song,
+            viewModel = viewModel,
+            onDismiss = { showQueueSheet = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QueueOverlayBottomSheet(
+    queue: List<MediaEntity>,
+    currentSong: MediaEntity,
+    viewModel: MediaViewModel,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(12.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle(color = DarkPrimary) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Playback Queue (${queue.size} Songs)",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 17.sp
+                )
+                
+                if (queue.isNotEmpty()) {
+                    TextButton(
+                        onClick = { 
+                            viewModel.clearQueue()
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Filled.ClearAll, contentDescription = "Clear Queue", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            if (queue.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No tracks inside execution queue", color = Color.Gray, fontSize = 13.sp)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 450.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(queue) { idx, item ->
+                        val active = item.path == currentSong.path
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { 
+                                    viewModel.playSongAtIndex(queue, idx)
+                                }
+                                .background(
+                                    if (active) DarkPrimary.copy(alpha = 0.12f) else Color.Transparent,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .border(
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (active) DarkPrimary.copy(alpha = 0.3f) else Color.Transparent
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                AlbumArtImage(
+                                    songPath = item.path,
+                                    songTitle = item.title,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                )
+                                
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.title,
+                                        color = if (active) DarkPrimary else Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = item.artist,
+                                        color = if (active) DarkPrimary.copy(alpha = 0.7f) else Color.Gray,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (active) {
+                                    Icon(
+                                        imageVector = Icons.Filled.VolumeUp,
+                                        contentDescription = "Active Playing",
+                                        tint = DarkPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { viewModel.removeFromQueue(item.path) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = "Remove From Queue",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+        }
     }
 }
 

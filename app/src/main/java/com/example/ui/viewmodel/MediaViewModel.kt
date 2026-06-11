@@ -119,6 +119,42 @@ class MediaViewModel(
     // Settings States (persisted via SharedPreferences, customizable in UI)
     private val prefs = application.getSharedPreferences("media_player_settings", android.content.Context.MODE_PRIVATE)
 
+    private val preferenceChangeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            "enabled_tabs_order" -> {
+                _visibleTabs.value = loadSavedTabs()
+            }
+            "is_dark_theme" -> {
+                _isDarkTheme.value = if (prefs.contains("is_dark_theme")) prefs.getBoolean("is_dark_theme", false) else null
+            }
+            "gesture_sensitivity" -> {
+                _gestureSensitivity.value = prefs.getFloat("gesture_sensitivity", 1.0f)
+            }
+            "smart_resume_enabled" -> {
+                _smartResumeEnabled.value = prefs.getBoolean("smart_resume_enabled", false)
+            }
+            "audio_focus_enabled" -> {
+                _audioFocusEnabled.value = prefs.getBoolean("audio_focus_enabled", true)
+            }
+            "default_playback_speed" -> {
+                _defaultPlaybackSpeed.value = prefs.getFloat("default_playback_speed", 1.0f)
+            }
+            "default_aspect_ratio" -> {
+                _defaultAspectRatio.value = prefs.getString("default_aspect_ratio", "FIT") ?: "FIT"
+            }
+            "subtitle_enabled_default" -> {
+                _subtitleEnabledDefault.value = prefs.getBoolean("subtitle_enabled_default", true)
+            }
+            "gesture_controls_enabled" -> {
+                _gestureControlsEnabled.value = prefs.getBoolean("gesture_controls_enabled", true)
+            }
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+    }
+
     // Configurable Sub-Tabs defaults ordered according to Tracks, Album, Favorite, Playlist, then others
     val defaultTabs = listOf("Tracks", "Album", "Favorite", "Playlist", "Artists", "Genres")
     
@@ -354,6 +390,7 @@ class MediaViewModel(
     fun addToQueue(song: MediaEntity) = playbackManager.addToQueue(song)
     fun removeFromQueue(songPath: String) = playbackManager.removeFromQueue(songPath)
     fun reorderQueue(from: Int, to: Int) = playbackManager.reorderQueue(from, to)
+    fun clearQueue() = playbackManager.clearQueue()
 
     // Sleep Timer action
     fun setSleepTimer(minutes: Int) = playbackManager.setSleepTimer(minutes)
@@ -470,6 +507,11 @@ class MediaViewModel(
             forceScanMedia()
             Log.i(TAG, "Database maintenance completed successfully.")
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        prefs.unregisterOnSharedPreferenceChangeListener(preferenceChangeListener)
     }
 }
 

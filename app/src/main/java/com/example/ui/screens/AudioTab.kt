@@ -36,6 +36,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import com.example.data.db.MediaEntity
 import com.example.data.db.PlaylistEntity
+import com.example.ui.components.AlbumArtImage
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.theme.DarkTertiary
@@ -315,6 +316,7 @@ fun AlbumsView(viewModel: MediaViewModel) {
                     subtitle = "${albumSongs.size} Tracks",
                     icon = Icons.Filled.Album,
                     gradientColors = listOf(DarkSecondary, DarkPrimary),
+                    songPath = albumSongs.firstOrNull()?.path,
                     onClick = {
                         viewModel.playSongAtIndex(albumSongs, 0)
                     }
@@ -344,6 +346,7 @@ fun ArtistsView(viewModel: MediaViewModel) {
                     subtitle = "${artistSongs.size} Tracks",
                     icon = Icons.Filled.Person,
                     gradientColors = listOf(DarkSecondary, Color(0xFFE040FB)),
+                    songPath = artistSongs.firstOrNull()?.path,
                     onClick = {
                         viewModel.playSongAtIndex(artistSongs, 0)
                     }
@@ -373,6 +376,7 @@ fun GenresView(viewModel: MediaViewModel) {
                     subtitle = "${genreSongs.size} Songs",
                     icon = Icons.Filled.MusicNote,
                     gradientColors = listOf(DarkSecondary, DarkTertiary),
+                    songPath = genreSongs.firstOrNull()?.path,
                     onClick = {
                         viewModel.playSongAtIndex(genreSongs, 0)
                     }
@@ -654,30 +658,34 @@ fun SongListItem(
                 )
             }
 
-            // Simulated Artwork Cover using solid matching color
-            val itemBackground = DarkSecondary.copy(alpha = 0.8f)
+            // Real dynamic metadata album art thumbnail with current state masks
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(itemBackground),
+                    .clip(RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                if (isPlaying) {
-                    // Animated playing bar state indicator
-                    Icon(
-                        Icons.Filled.Equalizer,
-                        contentDescription = "Playing",
-                        tint = DarkTertiary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
-                    Icon(
-                        Icons.Filled.MusicNote,
-                        contentDescription = "Song",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
+                AlbumArtImage(
+                    songPath = song.path,
+                    songTitle = song.title,
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                if (isCurrent) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.PlayArrow,
+                            contentDescription = "Playback Action Overlay",
+                            tint = DarkPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
 
@@ -741,45 +749,76 @@ fun CollectionCard(
     subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     gradientColors: List<Color>,
+    songPath: String? = null,
     onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(110.dp)
+            .height(115.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp)
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(14.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
+            if (songPath != null) {
+                // Background thumbnail art
+                AlbumArtImage(
+                    songPath = songPath,
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(0.dp)
+                )
+                // Linear background scrim overlay for high-contrast text accessibility
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
+                        )
+                )
+            } else {
+                // Beautiful vibrant gradient if no artwork
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(gradientColors))
+                )
+            }
+
+            // Foreground subtle category symbol
             Icon(
                 icon,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.15f),
+                tint = Color.White.copy(alpha = 0.22f),
                 modifier = Modifier
-                    .size(65.dp)
-                    .align(Alignment.BottomEnd)
+                    .size(54.dp)
+                    .padding(8.dp)
+                    .align(Alignment.TopEnd)
             )
 
-            Column(modifier = Modifier.align(Alignment.BottomStart)) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(14.dp)
+            ) {
                 Text(
                     text = title,
                     color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    color = Color.LightGray,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -1126,17 +1165,109 @@ fun DetailsDialog(
     song: MediaEntity,
     onDismiss: () -> Unit
 ) {
+    val fileSizeFormatted = remember(song.path, song.size) {
+        if (song.path.startsWith("asset:///")) {
+            val sizeMb = song.size.toFloat() / (1024 * 1024)
+            String.format("%.2f MB (Asset System)", sizeMb)
+        } else if (song.path.startsWith("http")) {
+            val sizeMb = song.size.toFloat() / (1024 * 1024)
+            String.format("%.2f MB (Cloud URL)", sizeMb)
+        } else {
+            val file = java.io.File(song.path)
+            if (file.exists()) {
+                val size = file.length()
+                val sizeMb = size.toFloat() / (1024 * 1024)
+                String.format("%.2f MB", sizeMb)
+            } else {
+                val sizeMb = song.size.toFloat() / (1024 * 1024)
+                String.format("%.2f MB", sizeMb)
+            }
+        }
+    }
+
+    val lastModifiedFormatted = remember(song.path) {
+        if (song.path.startsWith("asset:///")) {
+            "Installed System Preset"
+        } else if (song.path.startsWith("http")) {
+            "Network Stream Link"
+        } else {
+            val file = java.io.File(song.path)
+            if (file.exists()) {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                sdf.format(java.util.Date(file.lastModified()))
+            } else {
+                "Unknown Date"
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Technical Metadata Details", color = Color.White) },
+        title = {
+            Text(
+                text = "Info",
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 18.sp
+            )
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Title: ${song.title}", color = Color.White, fontSize = 13.sp)
-                Text("Artist: ${song.artist}", color = Color.White, fontSize = 13.sp)
-                Text("Album: ${song.album}", color = Color.LightGray, fontSize = 12.sp)
-                Text("Codec Format: ${song.path.substringAfterLast('.', "Unknown").uppercase()}", color = Color.LightGray, fontSize = 12.sp)
-                Text("Duration: ${formatDuration(song.duration)}", color = Color.LightGray, fontSize = 12.sp)
-                Text("Raw Storage File Path:\n${song.path}", color = DarkTertiary, fontSize = 11.sp, lineHeight = 15.sp)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Title", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(song.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+                
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Artist", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(song.artist, color = Color.White, fontSize = 14.sp)
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Album", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(song.album, color = Color.LightGray, fontSize = 13.sp)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Duration", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(formatDuration(song.duration), color = Color.White, fontSize = 13.sp)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Size", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(fileSizeFormatted, color = Color.White, fontSize = 13.sp)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Format Codec", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(song.path.substringAfterLast('.', "Unknown").uppercase(), color = Color.White, fontSize = 13.sp)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Modified Date", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(lastModifiedFormatted, color = Color.White, fontSize = 13.sp)
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("File Path", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = song.path,
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp
+                    )
+                }
             }
         },
         confirmButton = {
@@ -1144,7 +1275,7 @@ fun DetailsDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
             ) {
-                Text("Close", color = Color.Black)
+                Text("Close", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     )
