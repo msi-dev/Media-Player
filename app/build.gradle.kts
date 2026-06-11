@@ -157,3 +157,19 @@ tasks.matching {
 }.configureEach {
   dependsOn(generateSirajulKeystore)
 }
+
+tasks.register("copyApksToRoot") {
+  dependsOn("assembleDebug", "assembleRelease")
+  doLast {
+    val apkDir = layout.buildDirectory.dir("outputs/apk").get().asFile
+    val destDir = rootDir
+    if (apkDir.exists()) {
+      apkDir.walk().filter { it.extension == "apk" }.forEach { file ->
+        val targetFile = File(destDir, file.name)
+        file.copyTo(targetFile, overwrite = true)
+        println("Successfully copied signed APK to ${targetFile.absolutePath}")
+      }
+    }
+  }
+}
+
