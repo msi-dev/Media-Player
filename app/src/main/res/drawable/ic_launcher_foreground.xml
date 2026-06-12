@@ -1,28 +1,48 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.github.com/apk/res/android"
+    xmlns:aapt="http://schemas.github.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Ambient high-contrast backglow circle -->
+    
+    <!-- Neon Teal glowing play & wave symbol nested in safety boundary -->
     <path
-        android:fillColor="#1A00E5FF"
-        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
-    <!-- Left premium tech wave arc -->
+        android:strokeWidth="1.5"
+        android:strokeColor="#10FFFFFF"
+        android:pathData="M 54 22 A 32 32 0 1 0 54 86 A 32 32 0 1 0 54 22 Z" />
+
+    <!-- Wave bars on left -->
     <path
-        android:strokeColor="#00E5FF"
-        android:strokeWidth="4"
+        android:pathData="M37,46 L37,62 M42,40 L42,68 M47,48 L47,60"
         android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M34,34 A28.2,28.2 0,0,0 34,74" />
-    <!-- Right premium tech wave arc -->
+        android:strokeWidth="3.5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="37"
+                android:startY="40"
+                android:endX="47"
+                android:endY="68"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF00F5D4" />
+                <item android:offset="1.0" android:color="#FF00BBF9" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Play button triangle on right side center -->
     <path
-        android:strokeColor="#00E5FF"
-        android:strokeWidth="4"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M74,34 A28.2,28.2 0,0,1 74,74" />
-    <!-- Center Play solid triangle for maximum visual hierarchy -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M46,38 L72,54 L46,70 Z" />
+        android:pathData="M55,39 L73,54 L55,69 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="55"
+                android:startY="39"
+                android:endX="73"
+                android:endY="69"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF00F5D4" />
+                <item android:offset="1.0" android:color="#FF00BBF9" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

@@ -1,81 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Adaptive Media Storage privileges -->
+    <attribution android:tag="media_playback" android:label="@string/title_audio" />
+    <attribution android:tag="media_library" android:label="@string/title_playlists" />
+
+    <!-- Permissions for reading local Audio and Video files -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Modern background playback and lockscreen session rights -->
+    <!-- Foreground Service permissions for background playing (Android 14+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Audio routing/focus permission to prevent CONTROL_AUDIO AppOps warnings -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Internet for streaming sample offline media list support -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:name=".MediaPlayerApp"
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyApplication"
-        tools:ignore="MissingApplicationIcon">
+        android:theme="@style/Theme.MediaPlayer">
 
-        <!-- Background session coordination service -->
+        <activity
+            android:name="com.example.mediaplayer.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.MediaPlayer"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <service
-            android:name=".playback.MediaPlaybackService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback"
-            tools:targetApi="34">
+            android:name="com.example.mediaplayer.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.MyApplication">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-            <!-- Support standard Audio playback from other apps and managers -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="file" />
-                <data android:scheme="content" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:mimeType="audio/*" />
-            </intent-filter>
-
-            <!-- Support standard Video playback from other apps and managers -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="file" />
-                <data android:scheme="content" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:mimeType="video/*" />
-            </intent-filter>
-        </activity>
-
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"
-            android:theme="@style/Theme.MyApplication" />
     </application>
 
 </manifest>
