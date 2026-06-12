@@ -1,6 +1,7 @@
 package com.example.mediaplayer
 
 import android.app.Application
+import android.content.Intent
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
@@ -62,6 +63,41 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
 
+    private val _isPlayerExpanded = MutableStateFlow(false)
+    val isPlayerExpanded: StateFlow<Boolean> = _isPlayerExpanded.asStateFlow()
+
+    private val _sleepTimeRemaining = MutableStateFlow(0L)
+    val sleepTimeRemaining: StateFlow<Long> = _sleepTimeRemaining.asStateFlow()
+
+    private var sleepTimerJob: Job? = null
+
+    fun expandPlayer(expanded: Boolean) {
+        _isPlayerExpanded.value = expanded
+    }
+
+    fun startSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        _sleepTimeRemaining.value = minutes * 60 * 1000L
+        sleepTimerJob = viewModelScope.launch {
+            while (_sleepTimeRemaining.value > 0) {
+                delay(1000)
+                _sleepTimeRemaining.value = (_sleepTimeRemaining.value - 1000).coerceAtLeast(0)
+                if (_sleepTimeRemaining.value == 0L) {
+                    exoPlayer?.pause()
+                    val context = getApplication<Application>()
+                    val serviceIntent = Intent(context, MusicService::class.java)
+                    context.stopService(serviceIntent)
+                }
+            }
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimeRemaining.value = 0L
+    }
+
     // Sound Processing States
     private val _isEqualizerEnabled = MutableStateFlow(false)
     val isEqualizerEnabled: StateFlow<Boolean> = _isEqualizerEnabled.asStateFlow()
@@ -103,6 +139,26 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             repository.playbackHistory.collectLatest { playbackHistory.value = it }
         }
 
+        // Collect current state from MusicService to keep them in sync
+        viewModelScope.launch {
+            MusicService.currentPlayingSong.collectLatest { 
+                _currentPlayingSong.value = it
+                if (it != null) {
+                    _playbackDuration.value = it.duration
+                }
+            }
+        }
+        viewModelScope.launch {
+            MusicService.isPlaying.collectLatest {
+                _isPlaying.value = it
+                if (it) {
+                    startProgressTicker()
+                } else {
+                    stopProgressTicker()
+                }
+            }
+        }
+
         // Initialize Player on main
         initPlayer(application)
 
@@ -114,57 +170,34 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun initPlayer(context: Application) {
         try {
-            // Use attribution context in Android 11+ for correct AppOps tracking
-            val attributionContext = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                context.createAttributionContext("media_playback")
-            } else {
-                context
-            }
-            exoPlayer = ExoPlayer.Builder(attributionContext).build().apply {
+            // Start service to ensure it gets created
+            val serviceIntent = Intent(context, MusicService::class.java)
+            context.startService(serviceIntent)
+
+            val player = MusicService.playerInstance ?: ExoPlayer.Builder(context).build().apply {
                 repeatMode = Player.REPEAT_MODE_OFF
-                
-                addListener(object : Player.Listener {
-                    override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_READY) {
-                            _playbackDuration.value = duration
-                            startProgressTicker()
-                        } else if (state == Player.STATE_ENDED) {
-                            stopProgressTicker()
-                            _isPlaying.value = false
-                        }
-                    }
-
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        _isPlaying.value = playing
-                        if (playing) {
-                            startProgressTicker()
-                            // Register to history
-                            currentPlayingSong.value?.let { song ->
-                                viewModelScope.launch {
-                                    repository.addToHistory(
-                                        song.id,
-                                        song.title,
-                                        song.artist,
-                                        song.duration,
-                                        song.mediaType
-                                    )
-                                }
-                            }
-                        } else {
-                            stopProgressTicker()
-                        }
-                    }
-
-                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                        mediaItem?.let { item ->
-                            val currentSongId = item.mediaId
-                            val songObj = allSongs.value.find { it.id == currentSongId }
-                            _currentPlayingSong.value = songObj
-                        }
-                    }
-                })
             }
-            
+            MusicService.playerInstance = player
+            exoPlayer = player
+
+            player.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    if (playing) {
+                        currentPlayingSong.value?.let { song ->
+                            viewModelScope.launch {
+                                repository.addToHistory(
+                                    song.id,
+                                    song.title,
+                                    song.artist,
+                                    song.duration,
+                                    song.mediaType
+                                )
+                            }
+                        }
+                    }
+                }
+            })
+
             // Link Equalizer once player instance is ready
             setupAudioEffects()
         } catch (e: Exception) {
@@ -226,43 +259,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     // Playback functions
     fun playSong(song: SongEntity, playlist: List<SongEntity> = allSongs.value) {
-        val player = exoPlayer ?: return
-        player.stop()
-        player.clearMediaItems()
-
-        // Sync Audio Session on new play
-        val sessionId = player.audioSessionId
-        if (hardwareEqualizer == null && sessionId != 0) {
-            setupAudioEffects()
-        }
-
-        _playbackDuration.value = song.duration
-        _currentPlayingSong.value = song
-
-        // Populate player playlist
-        val activeQueue = if (_isShuffleEnabled.value) {
-            // Keep current song at front in shuffle
-            listOf(song) + (playlist.filter { it.id != song.id }.shuffled())
-        } else {
-            val idx = playlist.indexOfFirst { it.id == song.id }
-            if (idx >= 0) {
-                playlist.subList(idx, playlist.size) + playlist.subList(0, idx)
-            } else {
-                playlist
-            }
-        }
-
-        activeQueue.forEach { item ->
-            player.addMediaItem(
-                MediaItem.Builder()
-                    .setMediaId(item.id)
-                    .setUri(item.id)
-                    .build()
-            )
-        }
-
-        player.prepare()
-        player.play()
+        MusicService.playTrack(song, playlist, getApplication())
+        _isPlayerExpanded.value = true
     }
 
     fun togglePlayPause() {

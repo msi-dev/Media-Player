@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
+import androidx.compose.animation.*
 import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
@@ -41,7 +42,8 @@ class MainActivity : ComponentActivity() {
                 val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     arrayOf(
                         Manifest.permission.READ_MEDIA_AUDIO,
-                        Manifest.permission.READ_MEDIA_VIDEO
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.POST_NOTIFICATIONS
                     )
                 } else {
                     arrayOf(
@@ -69,6 +71,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainLayout(viewModel: MediaViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val isPlayerExpanded by viewModel.isPlayerExpanded.collectAsState()
+    val currentSong by viewModel.currentPlayingSong.collectAsState()
     val scope = rememberCoroutineScope()
     var selectedScreenIndex by remember { mutableIntStateOf(0) }
 
@@ -260,6 +264,22 @@ fun MainLayout(viewModel: MediaViewModel) {
                 }
             }
         )
+    }
+
+    // GLOBALLY ACCESSIBLE FULL SCREEN OVERLAY MUSIC PLAYER
+    AnimatedVisibility(
+        visible = isPlayerExpanded && currentSong != null,
+        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        currentSong?.let { song ->
+            FullAudioDetailPlayer(
+                song = song,
+                viewModel = viewModel,
+                onBack = { viewModel.expandPlayer(false) }
+            )
+        }
     }
 }
 

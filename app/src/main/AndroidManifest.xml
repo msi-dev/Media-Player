@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <attribution android:tag="media_playback" android:label="@string/title_audio" />
-    <attribution android:tag="media_library" android:label="@string/title_playlists" />
-
     <!-- Permissions for reading local Audio and Video files -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Foreground Service permissions for background playing (Android 14+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -43,6 +41,20 @@
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+        
+        <service
+            android:name="com.example.mediaplayer.MusicService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="com.example.mediaplayer.action.PLAY" />
+                <action android:name="com.example.mediaplayer.action.PAUSE" />
+                <action android:name="com.example.mediaplayer.action.TOGGLE" />
+                <action android:name="com.example.mediaplayer.action.NEXT" />
+                <action android:name="com.example.mediaplayer.action.PREVIOUS" />
+                <action android:name="com.example.mediaplayer.action.CLOSE" />
             </intent-filter>
         </service>
 

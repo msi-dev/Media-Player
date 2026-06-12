@@ -18,15 +18,8 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        // Use attribution context in Android 11+ for correct AppOps tracking
-        val attributionContext = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            createAttributionContext("media_playback")
-        } else {
-            this
-        }
-
         // Create player
-        val player = ExoPlayer.Builder(attributionContext)
+        val player = ExoPlayer.Builder(this)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -40,7 +33,7 @@ class PlaybackService : MediaSessionService() {
         exoPlayer = player
 
         // Build session
-        mediaSession = MediaSession.Builder(attributionContext, player)
+        mediaSession = MediaSession.Builder(this, player)
             .build()
     }
 

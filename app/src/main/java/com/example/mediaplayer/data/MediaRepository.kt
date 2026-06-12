@@ -10,12 +10,6 @@ import kotlinx.coroutines.withContext
 
 class MediaRepository(private val context: Context, private val mediaDao: MediaDao) {
 
-    private val activeContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        context.createAttributionContext("media_library")
-    } else {
-        context
-    }
-
     val allSongs: Flow<List<SongEntity>> = mediaDao.getAllSongsFlow()
     val favoriteSongs: Flow<List<SongEntity>> = mediaDao.getFavoriteSongsFlow()
     val allPlaylists: Flow<List<PlaylistEntity>> = mediaDao.getAllPlaylistsFlow()
@@ -75,7 +69,7 @@ class MediaRepository(private val context: Context, private val mediaDao: MediaD
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         }
 
-        activeContext.contentResolver.query(
+        context.contentResolver.query(
             audioCollection,
             audioProjection,
             null,
@@ -122,7 +116,7 @@ class MediaRepository(private val context: Context, private val mediaDao: MediaD
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         }
 
-        activeContext.contentResolver.query(
+        context.contentResolver.query(
             videoCollection,
             videoProjection,
             null,

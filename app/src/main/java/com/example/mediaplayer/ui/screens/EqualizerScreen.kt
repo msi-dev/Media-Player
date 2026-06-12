@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -112,8 +113,8 @@ fun EqualizerScreen(
                 }
             }
 
-            // 5 Band Sliders
-            items(eqBands) { band ->
+            // 5 Band Sliders represented vertically in a modern high-fidelity rack
+            item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
@@ -121,38 +122,72 @@ fun EqualizerScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp)
+                            .padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Band Frequency: ${band.label}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            val displayDb = (band.level / 100).toFloat()
-                            Text(
-                                text = "${if (displayDb > 0) "+" else ""}$displayDb dB",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.secondary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        
-                        Slider(
-                            value = band.level.toFloat(),
-                            onValueChange = { newValue ->
-                                viewModel.updateEqBandLevel(band.id, newValue.toInt())
-                            },
-                            valueRange = band.minLevel.toFloat()..band.maxLevel.toFloat(),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary
-                            )
+                        Text(
+                            text = "FREQUENCY BANDS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 12.dp)
                         )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(190.dp)
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            eqBands.forEach { band ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    val displayDb = (band.level / 100).toFloat()
+                                    Text(
+                                        text = "${if (displayDb > 0) "+" else ""}${displayDb.toInt()}dB",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .height(120.dp)
+                                            .width(28.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Slider(
+                                            value = band.level.toFloat(),
+                                            onValueChange = { newValue ->
+                                                viewModel.updateEqBandLevel(band.id, newValue.toInt())
+                                            },
+                                            valueRange = band.minLevel.toFloat()..band.maxLevel.toFloat(),
+                                            modifier = Modifier
+                                                .width(120.dp)
+                                                .graphicsLayer {
+                                                    rotationZ = -90f
+                                                },
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = MaterialTheme.colorScheme.primary,
+                                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                                            )
+                                        )
+                                    }
+                                    
+                                    Text(
+                                        text = band.label,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
