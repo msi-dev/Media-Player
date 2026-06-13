@@ -210,6 +210,13 @@ class MediaViewModel(
     val activePlaylist = _activePlaylist.asStateFlow()
 
     // Video Playback configuration parameters
+    private val _currentlyPlayingVideo = MutableStateFlow<MediaEntity?>(null)
+    val currentlyPlayingVideo = _currentlyPlayingVideo.asStateFlow()
+
+    fun setCurrentlyPlayingVideo(video: MediaEntity?) {
+        _currentlyPlayingVideo.value = video
+    }
+
     private val _videoPlaybackSpeed = MutableStateFlow(1.0f)
     val videoPlaybackSpeed = _videoPlaybackSpeed.asStateFlow()
 
@@ -302,13 +309,22 @@ class MediaViewModel(
 
     // Playback control interfaces
     fun playSongAtIndex(songs: List<MediaEntity>, index: Int) {
-        playbackManager.setQueue(songs, index)
-        recordPlaybackEvent(songs[index].path)
+        val selectedMedia = songs[index]
+        if (selectedMedia.isVideo) {
+            _currentlyPlayingVideo.value = selectedMedia
+        } else {
+            playbackManager.setQueue(songs, index)
+            recordPlaybackEvent(selectedMedia.path)
+        }
     }
 
     fun playMediaDirectly(media: MediaEntity) {
-        playbackManager.setQueue(listOf(media), 0)
-        playbackManager.play()
+        if (media.isVideo) {
+            _currentlyPlayingVideo.value = media
+        } else {
+            playbackManager.setQueue(listOf(media), 0)
+            playbackManager.play()
+        }
     }
 
     fun play() = playbackManager.play()

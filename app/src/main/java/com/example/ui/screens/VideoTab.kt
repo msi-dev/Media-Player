@@ -34,7 +34,6 @@ fun VideoTab(
     modifier: Modifier = Modifier
 ) {
     val videos by viewModel.filteredVideos.collectAsState()
-    var selectedVideoForPlayback by remember { mutableStateOf<MediaEntity?>(null) }
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         Text(
@@ -75,20 +74,11 @@ fun VideoTab(
                 items(videos) { video ->
                     VideoGridCard(
                         video = video,
-                        onClick = { selectedVideoForPlayback = video }
+                        onClick = { viewModel.setCurrentlyPlayingVideo(video) }
                     )
                 }
             }
         }
-    }
-
-    // Full screen landscape dynamic overlay gesture player
-    selectedVideoForPlayback?.let { video ->
-        VideoPlayerScreen(
-            video = video,
-            viewModel = viewModel,
-            onClose = { selectedVideoForPlayback = null }
-        )
     }
 }
 

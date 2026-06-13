@@ -256,6 +256,16 @@ fun MainScreen(
             )
         }
     }
+
+    // Global Video Player overlay
+    val currentlyPlayingVideo by viewModel.currentlyPlayingVideo.collectAsState()
+    currentlyPlayingVideo?.let { video ->
+        VideoPlayerScreen(
+            video = video,
+            viewModel = viewModel,
+            onClose = { viewModel.setCurrentlyPlayingVideo(null) }
+        )
+    }
 }
 
 // Bottom floating bar

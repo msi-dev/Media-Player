@@ -1,9 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Media Player</string>
-    <string name="title_audio">Audio</string>
-    <string name="title_video">Video</string>
-    <string name="title_equalizer">Equalizer</string>
-    <string name="title_playlists">Playlists</string>
-    <string name="title_history">History</string>
 </resources>

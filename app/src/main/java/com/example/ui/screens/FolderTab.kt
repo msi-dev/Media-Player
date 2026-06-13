@@ -44,7 +44,6 @@ fun FolderTab(
 ) {
     val foldersMap by viewModel.folders.collectAsState()
     var expandedFolder by remember { mutableStateOf<String?>(null) }
-    var selectedVideoForPlayback by remember { mutableStateOf<MediaEntity?>(null) }
     val context = LocalContext.current
     
     // Standard Android documents SAF selection launcher
@@ -92,10 +91,6 @@ fun FolderTab(
                 // Load files as queue list and start/play
                 if (pickedEntities.isNotEmpty()) {
                     viewModel.playSongAtIndex(pickedEntities, 0)
-                    val first = pickedEntities.first()
-                    if (first.isVideo) {
-                        selectedVideoForPlayback = first
-                    }
                 }
             }
         }
@@ -250,12 +245,7 @@ fun FolderTab(
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .clickable {
-                                                    if (file.isVideo) {
-                                                        selectedVideoForPlayback = file
-                                                    } else {
-                                                        // Audio: load folders group as playback playlist
-                                                        viewModel.playSongAtIndex(files, fIdx)
-                                                    }
+                                                    viewModel.playSongAtIndex(files, fIdx)
                                                 }
                                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically,
@@ -298,12 +288,4 @@ fun FolderTab(
         }
     }
 
-    // Direct Full Screen overlay gesture player trigger for folders
-    selectedVideoForPlayback?.let { video ->
-        VideoPlayerScreen(
-            video = video,
-            viewModel = viewModel,
-            onClose = { selectedVideoForPlayback = null }
-        )
-    }
 }
