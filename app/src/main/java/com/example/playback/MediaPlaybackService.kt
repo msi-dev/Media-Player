@@ -65,6 +65,21 @@ class MediaPlaybackService : MediaSessionService() {
         return mediaSession
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action
+        if (action != null) {
+            val app = application as MediaPlayerApp
+            val playbackManager = app.playbackManager
+            when (action) {
+                "ACTION_PLAY" -> playbackManager.play()
+                "ACTION_PAUSE" -> playbackManager.pause()
+                "ACTION_NEXT" -> playbackManager.playNext()
+                "ACTION_PREVIOUS" -> playbackManager.playPrevious()
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
     private fun updateNotification() {
         val app = application as MediaPlayerApp
         val playbackManager = app.playbackManager

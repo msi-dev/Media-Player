@@ -1,11 +1,14 @@
 package com.example
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -27,12 +30,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
-import com.example.ndk.NativeMediaBridge
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ProvideResponsiveDimensions
 import com.example.ui.viewmodel.MediaViewModel
 import com.example.ui.viewmodel.MediaViewModelFactory
-import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.URL
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,18 +81,11 @@ fun SettingsContent(
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // Observe data stream from VM
+    // Observe settings data
     val isDarkPref by viewModel.isDarkTheme.collectAsState()
-    val eqActive by viewModel.eqEnabled.collectAsState()
-    val bands by viewModel.eqBands.collectAsState()
-    val bassBoostVal by viewModel.bassBoost.collectAsState()
-    val virtualizerVal by viewModel.virtualizer.collectAsState()
-    val loudnessVal by viewModel.loudnessEnhancer.collectAsState()
-    val balanceVal by viewModel.balance.collectAsState()
     val sleepTimerVal by viewModel.sleepTimerRemaining.collectAsState()
-    val gestureSensitivity by viewModel.gestureSensitivity.collectAsState()
-    val smartResumeEnabled by viewModel.smartResumeEnabled.collectAsState()
 
     // Folder states
     val physicalFolders by viewModel.allPhysicalFolders.collectAsState()
@@ -94,9 +93,8 @@ fun SettingsContent(
     val hiddenFolderPaths = remember(hiddenFoldersRaw) { hiddenFoldersRaw.map { it.folderPath } }
 
     var showHideFolderDialog by remember { mutableStateOf(false) }
-
-    // Dynamic performance hardware profiling info from JNI
-    val nativePerformance = remember { NativeMediaBridge.getNativeOptimizationProfile() }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -104,11 +102,11 @@ fun SettingsContent(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        // Redesigned M3 Top Activity Bar
+        // Redesigned modern top level Title bar Settings with navigation back action
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 6.dp),
+                .padding(horizontal = 4.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
@@ -119,9 +117,9 @@ fun SettingsContent(
                 )
             }
             Text(
-                text = "Sound Deck & Settings",
+                text = "Settings",
                 color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 20.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 12.dp)
             )
@@ -134,533 +132,105 @@ fun SettingsContent(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header Info Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            // 1. THEMES DROPDOWN ROW
+            SettingRowCard(
+                icon = Icons.Default.Palette,
+                title = "Themes",
+                subtitle = "Toggle standard light mode, dark mode, or follow system default."
             ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "Decoder Engine Panel",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Customize low-latency hardware channels, control storage crawlers, sleep suspensions, and verify native media decoders.",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    )
-                }
+                ThemesDropdown(
+                    currentTheme = isDarkPref,
+                    onThemeSelect = { theme ->
+                        viewModel.setThemePref(theme)
+                    }
+                )
             }
 
-            // Section: Active Hardware Equalizer
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
+            // 2. SLEEP TIMER TIME PICKER ROW
+            SettingRowCard(
+                icon = Icons.Default.AccessTime,
+                title = "Sleep Timer",
+                subtitle = "Set a count-down using custom clock values to suspend ongoing music."
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    Text(
+                        text = if (sleepTimerVal > 0) "Seconds left: ${formatDuration(sleepTimerVal)}" else "Timer inactive",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (sleepTimerVal > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (sleepTimerVal > 0) {
+                            Button(
+                                onClick = { viewModel.setSleepTimer(0) },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Stop Timer", fontSize = 11.sp)
+                            }
+                        }
+                        Button(
+                            onClick = { showSleepTimerDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Equalizer,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Parametric Equalizer",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
+                            Text("Open Clock", fontSize = 11.sp)
                         }
-                        Switch(
-                            checked = eqActive,
-                            onCheckedChange = { viewModel.toggleEqualizer(it) }
-                        )
-                    }
-
-                    if (eqActive) {
-                        val frequencies = listOf("60Hz", "230Hz", "910Hz", "4kHz", "14Hz")
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            bands.forEachIndexed { idx, sliderVal ->
-                                Column {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = frequencies[idx],
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                            fontSize = 12.sp
-                                        )
-                                        Text(
-                                            text = "${if (sliderVal >= 0) "+" else ""}${sliderVal} dB",
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    Slider(
-                                        value = sliderVal.toFloat(),
-                                        onValueChange = { newVal ->
-                                            viewModel.setEqualizerBand(idx, newVal.roundToInt())
-                                        },
-                                        valueRange = -15f..15f,
-                                        colors = SliderDefaults.colors(
-                                            thumbColor = MaterialTheme.colorScheme.primary,
-                                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                                            inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            text = "To manipulate active hardware frequencies, toggle the equalizer control above.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp
-                        )
                     }
                 }
             }
 
-            // Section: Enhancements
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
+            // 3. HIDE FOLDERS CHECKLIST ROW
+            SettingRowCard(
+                icon = Icons.Default.FolderOff,
+                title = "Hide Folder",
+                subtitle = "Exclude directories from media crawls (currently hidden: ${hiddenFoldersRaw.size})."
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                Button(
+                    onClick = { showHideFolderDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Acoustic Enhancements",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
-
-                    // 1. Bass Booster
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Bass Booster Boost", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 12.sp)
-                            Text(text = "$bassBoostVal / 1000", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Slider(
-                            value = bassBoostVal.toFloat(),
-                            onValueChange = { viewModel.setBassBoost(it.roundToInt()) },
-                            valueRange = 0f..1000f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                            )
-                        )
-                    }
-
-                    // 2. Surround Virtualizer
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Surround Space Virtualizer", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 12.sp)
-                            Text(text = "$virtualizerVal / 1000", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Slider(
-                            value = virtualizerVal.toFloat(),
-                            onValueChange = { viewModel.setVirtualizer(it.roundToInt()) },
-                            valueRange = 0f..1000f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                            )
-                        )
-                    }
-
-                    // 3. Loudness Enhancer
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Loudness Maximizer Gain", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 12.sp)
-                            Text(text = "$loudnessVal mB", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Slider(
-                            value = loudnessVal.toFloat(),
-                            onValueChange = { viewModel.setLoudnessEnhancer(it.roundToInt()) },
-                            valueRange = 0f..1000f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                            )
-                        )
-                    }
-
-                    // 4. Stereo Balance
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Stereo Audio Balance", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 12.sp)
-                            Text(
-                                text = when {
-                                    balanceVal < -0.05f -> "L -${(balanceVal * -100).roundToInt()}%"
-                                    balanceVal > 0.05f -> "R +${(balanceVal * 100).roundToInt()}%"
-                                    else -> "Centered Balanced"
-                                },
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Slider(
-                            value = balanceVal,
-                            onValueChange = { viewModel.setBalance(it) },
-                            valueRange = -1.0f..1.0f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                            )
-                        )
-                    }
+                    Icon(imageVector = Icons.Default.VisibilityOff, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Configure Hidden Folders Checklist", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
-            // Section: Sleep timer and theme styling
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
+            // 4. AUDIO TAB LAYOUT MANAGER ROW
+            SettingRowCard(
+                icon = Icons.Default.List,
+                title = "Audio Tab Manager",
+                subtitle = "Rearrange and toggle sections shown under the audio library panels."
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Bedtime,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Timer & Appearance",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
+                val defaultTabs = viewModel.defaultTabs
+                val visibleTabs by viewModel.visibleTabs.collectAsState()
 
-                    // Sleep Timer Rows
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(text = "Suspension Sleep Timer", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 13.sp)
-                            Text(
-                                text = if (sleepTimerVal > 0) "State: active (${formatDuration(sleepTimerVal)})" else "Clock idle",
-                                color = if (sleepTimerVal > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                var tabsState by remember(visibleTabs) {
+                    val hidden = defaultTabs.filter { !visibleTabs.contains(it) }
+                    mutableStateOf(visibleTabs + hidden)
+                }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(0, 15, 30, 60).forEach { mins ->
-                                Button(
-                                    onClick = { viewModel.setSleepTimer(mins) },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (mins == 0 && sleepTimerVal == 0L) MaterialTheme.colorScheme.primary
-                                        else if (mins > 0 && sleepTimerVal > 0L) MaterialTheme.colorScheme.secondary
-                                        else MaterialTheme.colorScheme.surface
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(30.dp)
-                                ) {
-                                    Text(
-                                        text = if (mins == 0) "Off" else "${mins}m",
-                                        color = if (mins == 0 && sleepTimerVal == 0L || mins > 0 && sleepTimerVal > 0L) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tabsState.forEachIndexed { index, tabName ->
+                        val isVisible = visibleTabs.contains(tabName)
 
-                    Divider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
-
-                    // Theme Picker Row
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(text = "Application Theme Visage", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 13.sp)
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.05f),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            listOf(
-                                Triple(false, "Light", Icons.Default.LightMode),
-                                Triple(true, "Dark", Icons.Default.DarkMode),
-                                Triple(null, "System", Icons.Default.SettingsSuggest)
-                            ).forEach { (prefBool, label, icon) ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { viewModel.setThemePref(prefBool) }
-                                        .padding(4.dp)
-                                ) {
-                                    RadioButton(
-                                        selected = isDarkPref == prefBool,
-                                        onClick = { viewModel.setThemePref(prefBool) }
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = null,
-                                        tint = if (isDarkPref == prefBool) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = label,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Redesigned Checklist Folders Hiding System
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FolderOff,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Storage Folder Exclusion",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
-
-                    Text(
-                        text = "Exempt entire directories from media libraries. Filtered directories and their internal items are hidden recursively.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
-                    )
-
-                    Button(
-                        onClick = { showHideFolderDialog = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.VisibilityOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "Configure Hidden Folders Checklist",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    if (hiddenFoldersRaw.isNotEmpty()) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            Text(
-                                text = "Currently Exempted (${hiddenFoldersRaw.size}):",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            hiddenFoldersRaw.forEach { hiddenEntity ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
-                                            shape = RoundedCornerShape(6.dp)
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = hiddenEntity.folderPath,
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    IconButton(
-                                        onClick = { viewModel.removeHiddenFolder(hiddenEntity.folderPath) },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Remove",
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            text = "No storage directories currently filtered.",
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    }
-                }
-            }
-
-            // Section: JNI NDK Codecs Layer Profiling
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.SettingsInputHdmi,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "C++ Decoders Interface",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
-                    Text(
-                        text = nativePerformance,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 16.sp
-                    )
-                    Text(
-                        text = "Encrypted Codecs checked in background: AVI, MOV, FLAC, WEBM, MIDI, DSD, AMR, APE, MP4. Multi-abi ARM/x86 native optimization vectors active.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
-                    )
-                }
-            }
-
-            // Top Tab Layout Manager
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(imageVector = Icons.Default.List, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Top Tabs Manager", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    }
-
-                    Text(
-                        text = "Customize the active subsections shown under the Audio explorer screens.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
-                    )
-
-                    val defaultTabs = viewModel.defaultTabs
-                    val visibleTabs by viewModel.visibleTabs.collectAsState()
-
-                    var tabsState by remember(visibleTabs) {
-                        val hidden = defaultTabs.filter { !visibleTabs.contains(it) }
-                        mutableStateOf(visibleTabs + hidden)
-                    }
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        tabsState.forEachIndexed { index, tabName ->
-                            val isVisible = visibleTabs.contains(tabName)
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.05f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
                             val onToggle = {
                                 val currentVisible = visibleTabs.toMutableList()
                                 if (isVisible) {
@@ -680,7 +250,7 @@ fun SettingsContent(
                                     .clickable { onToggle() }
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Checkbox(
                                     checked = isVisible,
@@ -694,57 +264,56 @@ fun SettingsContent(
                                 )
                             }
 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        if (index > 0) {
+                                            val newList = tabsState.toMutableList()
+                                            val temp = newList[index]
+                                            newList[index] = newList[index - 1]
+                                            newList[index - 1] = temp
+                                            tabsState = newList
+
+                                            val newVisible = newList.filter { visibleTabs.contains(it) }
+                                            viewModel.saveVisibleTabs(newVisible)
+                                        }
+                                    },
+                                    enabled = index > 0,
+                                    modifier = Modifier.size(28.dp)
                                 ) {
-                                    IconButton(
-                                        onClick = {
-                                            if (index > 0) {
-                                                val newList = tabsState.toMutableList()
-                                                val temp = newList[index]
-                                                newList[index] = newList[index - 1]
-                                                newList[index - 1] = temp
-                                                tabsState = newList
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowUpward,
+                                        contentDescription = "Up",
+                                        tint = if (index > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
 
-                                                val newVisible = newList.filter { visibleTabs.contains(it) }
-                                                viewModel.saveVisibleTabs(newVisible)
-                                            }
-                                        },
-                                        enabled = index > 0,
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ArrowUpward,
-                                            contentDescription = "Up",
-                                            tint = if (index > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
+                                IconButton(
+                                    onClick = {
+                                        if (index < tabsState.size - 1) {
+                                            val newList = tabsState.toMutableList()
+                                            val temp = newList[index]
+                                            newList[index] = newList[index + 1]
+                                            newList[index + 1] = temp
+                                            tabsState = newList
 
-                                    IconButton(
-                                        onClick = {
-                                            if (index < tabsState.size - 1) {
-                                                val newList = tabsState.toMutableList()
-                                                val temp = newList[index]
-                                                newList[index] = newList[index + 1]
-                                                newList[index + 1] = temp
-                                                tabsState = newList
-
-                                                val newVisible = newList.filter { visibleTabs.contains(it) }
-                                                viewModel.saveVisibleTabs(newVisible)
-                                            }
-                                        },
-                                        enabled = index < tabsState.size - 1,
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ArrowDownward,
-                                            contentDescription = "Down",
-                                            tint = if (index < tabsState.size - 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
+                                            val newVisible = newList.filter { visibleTabs.contains(it) }
+                                            viewModel.saveVisibleTabs(newVisible)
+                                        }
+                                    },
+                                    enabled = index < tabsState.size - 1,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDownward,
+                                        contentDescription = "Down",
+                                        tint = if (index < tabsState.size - 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
                                 }
                             }
                         }
@@ -752,107 +321,70 @@ fun SettingsContent(
                 }
             }
 
-            // Maintenance Section: Caching optimization layer
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
+            // 5. VERSION INFO ROW
+            SettingRowCard(
+                icon = Icons.Default.Info,
+                title = "Version Info",
+                subtitle = "Query real-time package compilation information from local device storage."
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                val versionName = remember {
+                    try {
+                        val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                        pInfo.versionName ?: "1.0.0"
+                    } catch (e: Exception) {
+                        "1.0.0"
+                    }
+                }
+
+                Text(
+                    text = "Release Variant: $versionName",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+
+            // 6. ABOUT MODAL WINDOW ROW
+            SettingRowCard(
+                icon = Icons.Default.QuestionMark,
+                title = "About",
+                subtitle = "View architect credits, GitHub repositories, and dynamic download updates."
+            ) {
+                Button(
+                    onClick = { showAboutDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudSync,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Cache & Storage Library",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
-
-                    Text(
-                        text = "We cache scanned files in Room database. Clear the folder links cache, or force an instant rescan crawl if directories mismatch.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                viewModel.clearCache()
-                                Toast.makeText(context, "Caches and links pruned.", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Clear Cache", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = {
-                                viewModel.forceScanMedia()
-                                Toast.makeText(context, "Scanning storage library...", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Force Rescan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                    Icon(imageVector = Icons.Default.HelpOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("View About & Check Updates", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
-            // About Specs
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "Version Info",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                    Text(
-                        text = "1.0.0 (Enterprise Pro Edition)",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = "Engine leverages asynchronous Kotlin Coroutines, SQLite local Room indexes, JNI sound interfaces, and Media3 ExoPlayer loops.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 
-    // Interactive Checklist dialogue for Folder Hiding System
+    // MODAL DIALOGS
+    // A. SLEEP TIMER DIALOG
+    if (showSleepTimerDialog) {
+        SleepTimerPickerDialog(
+            onDismissRequest = { showSleepTimerDialog = false },
+            onConfirm = { minutes ->
+                if (minutes > 0) {
+                    viewModel.setSleepTimer(minutes)
+                    Toast.makeText(context, "Timer scheduled for $minutes minute(s).", Toast.LENGTH_SHORT).show()
+                } else {
+                    viewModel.setSleepTimer(0)
+                    Toast.makeText(context, "Timer switched off.", Toast.LENGTH_SHORT).show()
+                }
+                showSleepTimerDialog = false
+            }
+        )
+    }
+
+    // B. EXEMPTED DIRECTORIES / HIDE FOLDER CHECKLIST DIALOG
     if (showHideFolderDialog) {
         AlertDialog(
             onDismissRequest = { showHideFolderDialog = false },
@@ -887,7 +419,7 @@ fun SettingsContent(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "No scan directories map to files.",
+                                "No scan directories found.",
                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
@@ -963,6 +495,326 @@ fun SettingsContent(
             containerColor = MaterialTheme.colorScheme.surface
         )
     }
+
+    // C. ABOUT MODAL DIALOG WITH REAL GITHUB UPDATE CHECKER
+    if (showAboutDialog) {
+        AboutDialog(
+            onDismissRequest = { showAboutDialog = false }
+        )
+    }
+}
+
+@Composable
+fun SettingRowCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = subtitle,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+fun ThemesDropdown(
+    currentTheme: Boolean?,
+    onThemeSelect: (Boolean?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val displayText = when (currentTheme) {
+        true -> "Dark Mode"
+        false -> "Light Mode"
+        null -> "System Default"
+    }
+
+    Box {
+        OutlinedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(displayText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Expand dropdown"
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth(0.9f)
+        ) {
+            DropdownMenuItem(
+                text = { Text("Light Mode") },
+                onClick = {
+                    onThemeSelect(false)
+                    expanded = false
+                },
+                leadingIcon = { Icon(Icons.Default.LightMode, contentDescription = null) }
+            )
+            DropdownMenuItem(
+                text = { Text("Dark Mode") },
+                onClick = {
+                    onThemeSelect(true)
+                    expanded = false
+                },
+                leadingIcon = { Icon(Icons.Default.DarkMode, contentDescription = null) }
+            )
+            DropdownMenuItem(
+                text = { Text("System Default") },
+                onClick = {
+                    onThemeSelect(null)
+                    expanded = false
+                },
+                leadingIcon = { Icon(Icons.Default.Android, contentDescription = null) }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SleepTimerPickerDialog(
+    onDismissRequest: () -> Unit,
+    onConfirm: (minutes: Int) -> Unit
+) {
+    val state = rememberTimePickerState(initialHour = 0, initialMinute = 0, is24Hour = true)
+    var customInput by remember { mutableStateOf("") }
+    var useTextField by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (useTextField) {
+                        val parsed = customInput.toIntOrNull() ?: 0
+                        onConfirm(parsed)
+                    } else {
+                        val hours = state.hour
+                        val mins = state.minute
+                        onConfirm(hours * 60 + mins)
+                    }
+                }
+            ) {
+                Text("Confirm")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Cancel")
+            }
+        },
+        title = {
+            Text("Set Sleep Timer", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Enter Minutes Manually", modifier = Modifier.weight(1f), fontSize = 14.sp)
+                    Switch(checked = useTextField, onCheckedChange = { useTextField = it })
+                }
+
+                if (useTextField) {
+                    OutlinedTextField(
+                        value = customInput,
+                        onValueChange = { customInput = it.filter { char -> char.isDigit() } },
+                        label = { Text("Duration in Minutes") },
+                        placeholder = { Text("e.g. 45") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    TimePicker(state = state)
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun AboutDialog(
+    onDismissRequest: () -> Unit
+) {
+    val context = LocalContext.current
+    var checkingUpdates by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf("Check for updates from GitHub release.") }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Close")
+            }
+        },
+        title = {
+            Text("About", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Media Player Pro",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Developer: KSA Sirajul\nContact: ksa.sirajul.2026@gmail.com",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "An offline media playback powerhouse featuring parametric equalizer boost, directory filters, active sleep suspensions, and zero telemetry analytics.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Button(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/ksa-sirajul-2026/media-player"))
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("GitHub Project Source", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = updateStatus,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 15.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            checkingUpdates = true
+                            updateStatus = "Contacting GitHub..."
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    val url = URL("https://api.github.com/repos/ksa-sirajul-2026/media-player/releases/latest")
+                                    val connection = url.openConnection() as java.net.HttpURLConnection
+                                    connection.requestMethod = "GET"
+                                    connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                                    connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+                                    connection.connectTimeout = 5000
+                                    connection.readTimeout = 5000
+
+                                    val responseCode = connection.responseCode
+                                    if (responseCode == 200) {
+                                        val stream = connection.inputStream
+                                        val responseText = stream.bufferedReader().use { it.readText() }
+                                        val json = JSONObject(responseText)
+                                        val tagName = json.optString("tag_name", "1.0.0")
+                                        val body = json.optString("body", "No changes documented.")
+                                        withContext(Dispatchers.Main) {
+                                            updateStatus = "Latest version on GitHub: $tagName\nChanges: $body"
+                                            checkingUpdates = false
+                                        }
+                                    } else {
+                                        withContext(Dispatchers.Main) {
+                                            updateStatus = "No releases found on GitHub repository (Code: $responseCode)"
+                                            checkingUpdates = false
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        updateStatus = "Could not check for updates:\n${e.localizedMessage}"
+                                        checkingUpdates = false
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !checkingUpdates,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        if (checkingUpdates) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                        } else {
+                            Icon(imageVector = Icons.Default.Update, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Check Latest Release", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        },
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }
 
 private fun formatDuration(ms: Long): String {

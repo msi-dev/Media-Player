@@ -24,6 +24,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.db.MediaEntity
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.shape.CircleShape
+import com.example.ui.components.rememberVideoThumbnail
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.viewmodel.MediaViewModel
@@ -38,14 +41,14 @@ fun VideoTab(
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         Text(
             text = "Video Cinema Library",
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             modifier = Modifier.padding(vertical = 8.dp)
         )
         Text(
             text = "Supports MKV, AVI, MP4, MOV. Hardware accelerated.",
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             fontSize = 12.sp,
             modifier = Modifier.padding(bottom = 12.dp)
         )
@@ -56,11 +59,11 @@ fun VideoTab(
                     Icon(
                         Icons.Filled.VideoFile,
                         contentDescription = null,
-                        tint = Color.Gray,
+                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                         modifier = Modifier.size(65.dp)
                     )
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("No local video clips scanned.", color = Color.Gray, fontSize = 14.sp)
+                    Text("No local video clips scanned.", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f), fontSize = 14.sp)
                 }
             }
         } else {
@@ -68,7 +71,7 @@ fun VideoTab(
                 columns = GridCells.Adaptive(160.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 90.dp),
+                contentPadding = PaddingValues(bottom = 160.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(videos) { video ->
@@ -87,6 +90,8 @@ fun VideoGridCard(
     video: MediaEntity,
     onClick: () -> Unit
 ) {
+    val bitmap = rememberVideoThumbnail(video.path)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -95,24 +100,45 @@ fun VideoGridCard(
         shape = RoundedCornerShape(12.dp)
     ) {
         Column {
-            // Simulated High-Fi Video Thumbnail Cover
-            val thumbnailBrush = Brush.verticalGradient(
-                colors = listOf(DarkSecondary.copy(alpha = 0.5f), Color.Black)
-            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(105.dp)
-                    .background(thumbnailBrush),
+                    .height(115.dp)
+                    .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Video Thumbnail",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    val thumbnailBrush = Brush.verticalGradient(
+                        colors = listOf(DarkSecondary.copy(alpha = 0.5f), Color.Black)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(thumbnailBrush)
+                    )
+                }
+
                 // Play Icon overlay
-                Icon(
-                    Icons.Filled.PlayArrow,
-                    contentDescription = "Play",
-                    tint = DarkPrimary,
-                    modifier = Modifier.size(36.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), shape = CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = "Play",
+                        tint = DarkPrimary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
 
                 // Render exact physical duration badge
                 Box(
@@ -134,7 +160,7 @@ fun VideoGridCard(
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
                     text = video.title,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     maxLines = 1,
@@ -148,7 +174,7 @@ fun VideoGridCard(
                 ) {
                     Text(
                         text = video.album, // Classified structural path tag
-                        color = Color.LightGray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -156,7 +182,7 @@ fun VideoGridCard(
                     )
                     Text(
                         text = "Local HD",
-                        color = DarkPrimary,
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )

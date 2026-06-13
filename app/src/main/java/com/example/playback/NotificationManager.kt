@@ -51,6 +51,19 @@ class NotificationManager {
         }
 
         @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+        private fun getServicePendingIntent(context: Context, action: String): PendingIntent {
+            val intent = Intent(context, MediaPlaybackService::class.java).apply {
+                this.action = action
+            }
+            return PendingIntent.getService(
+                context,
+                action.hashCode(),
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
         fun buildMediaNotification(
             context: Context,
             mediaSession: MediaSession,
@@ -71,6 +84,28 @@ class NotificationManager {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
+            val prevAction = NotificationCompat.Action(
+                android.R.drawable.ic_media_previous, "Previous",
+                getServicePendingIntent(context, "ACTION_PREVIOUS")
+            )
+
+            val playPauseAction = if (isPlaying) {
+                NotificationCompat.Action(
+                    android.R.drawable.ic_media_pause, "Pause",
+                    getServicePendingIntent(context, "ACTION_PAUSE")
+                )
+            } else {
+                NotificationCompat.Action(
+                    android.R.drawable.ic_media_play, "Play",
+                    getServicePendingIntent(context, "ACTION_PLAY")
+                )
+            }
+
+            val nextAction = NotificationCompat.Action(
+                android.R.drawable.ic_media_next, "Next",
+                getServicePendingIntent(context, "ACTION_NEXT")
+            )
+
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle(title)
@@ -79,8 +114,12 @@ class NotificationManager {
                 .setContentIntent(pendingIntent)
                 .setOngoing(isPlaying)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .addAction(prevAction)
+                .addAction(playPauseAction)
+                .addAction(nextAction)
                 .setStyle(
                     MediaStyleNotificationHelper.MediaStyle(mediaSession)
+                        .setShowActionsInCompactView(0, 1, 2)
                 )
 
             return builder.build()

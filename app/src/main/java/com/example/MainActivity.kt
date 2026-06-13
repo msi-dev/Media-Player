@@ -13,6 +13,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.ViewModelProvider
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import com.example.playback.MediaPlaybackService
 import com.example.ui.screens.MainScreen
 import com.example.ui.theme.MyApplicationTheme
@@ -73,9 +75,12 @@ class MainActivity : ComponentActivity() {
                 null -> isSystemInDarkTheme() // Sync standard system settings
             }
 
+            @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+            val windowSizeClass = calculateWindowSizeClass(this)
+
             MyApplicationTheme(darkTheme = forceDark) {
                 ProvideResponsiveDimensions {
-                    MainScreen(viewModel = viewModel)
+                    MainScreen(viewModel = viewModel, windowSizeClass = windowSizeClass)
                 }
             }
         }

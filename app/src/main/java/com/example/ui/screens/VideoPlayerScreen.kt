@@ -46,6 +46,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import com.example.data.db.MediaEntity
+import com.example.ui.components.CustomAospSeekBar
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.theme.DarkTertiary
@@ -113,7 +114,7 @@ fun VideoPlayerScreen(
     LaunchedEffect(currentOrientationMode) {
         activity?.let { act ->
             when (currentOrientationMode) {
-                PlayerOrientationMode.AUTO -> act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                PlayerOrientationMode.AUTO -> act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
                 PlayerOrientationMode.PORTRAIT -> act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 PlayerOrientationMode.LANDSCAPE -> act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }
@@ -124,12 +125,27 @@ fun VideoPlayerScreen(
     DisposableEffect(video.path) {
         player.stop()
         player.clearMediaItems()
-        player.setMediaItem(MediaItem.fromUri(video.path))
+        player.setMediaItem(androidx.media3.common.MediaItem.fromUri(video.path))
+        if (video.lastPlayedPosition > 0L) {
+            player.seekTo(video.lastPlayedPosition)
+        }
         player.prepare()
         player.play()
 
         onDispose {
+            val lastPos = player.currentPosition
+            viewModel.updateLastPlayedProgress(video.path, lastPos)
             player.stop()
+        }
+    }
+
+    // Continuous position saving loop for video
+    LaunchedEffect(video.path) {
+        while (true) {
+            if (player.isPlaying) {
+                viewModel.updateLastPlayedProgress(video.path, player.currentPosition)
+            }
+            kotlinx.coroutines.delay(1000)
         }
     }
 
@@ -489,19 +505,15 @@ fun VideoPlayerScreen(
                                         fontFamily = FontFamily.Monospace
                                     )
 
-                                    Slider(
-                                        value = if (totalTrackLen > 0L) currentTrackPos.toFloat() / totalTrackLen else 0f,
+                                    CustomAospSeekBar(
+                                        progress = if (totalTrackLen > 0L) currentTrackPos.toFloat() / totalTrackLen else 0f,
                                         onValueChange = { percent ->
                                             val seekPoint = (percent * totalTrackLen).toLong()
                                             currentTrackPos = seekPoint
                                             player.seekTo(seekPoint)
                                         },
-                                        modifier = Modifier.weight(1f),
-                                        colors = SliderDefaults.colors(
-                                            thumbColor = DarkPrimary,
-                                            activeTrackColor = DarkPrimary,
-                                            inactiveTrackColor = Color.DarkGray
-                                        )
+                                        onValueChangeFinished = {},
+                                        modifier = Modifier.weight(1f)
                                     )
 
                                     Text(

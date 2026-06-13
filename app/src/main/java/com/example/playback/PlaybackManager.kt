@@ -263,8 +263,10 @@ class PlaybackManager(private val context: Context) {
             builder.build()
         }
 
+        val targetSong = songs[startPosition]
+        val savedPosition = targetSong.lastPlayedPosition
         player.addMediaItems(mediaItems)
-        player.seekTo(startPosition, 0L)
+        player.seekTo(startPosition, savedPosition)
         player.prepare()
         play()
         
@@ -275,7 +277,7 @@ class PlaybackManager(private val context: Context) {
     fun play() {
         try {
             val serviceIntent = Intent(context, MediaPlaybackService::class.java)
-            context.startService(serviceIntent)
+            androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed startService in PlaybackManager.play: ${e.message}")
         }

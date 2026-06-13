@@ -62,12 +62,12 @@ fun AudioTab(
                 selectedTabIndex = activeIndex,
                 edgePadding = 4.dp,
                 containerColor = Color.Transparent,
-                contentColor = DarkPrimary,
+                contentColor = MaterialTheme.colorScheme.primary,
                 indicator = { tabPositions ->
                     if (activeIndex < tabPositions.size) {
                         TabRowDefaults.SecondaryIndicator(
                             modifier = Modifier.tabIndicatorOffset(tabPositions[activeIndex]),
-                            color = DarkPrimary
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 },
@@ -77,6 +77,8 @@ fun AudioTab(
                     Tab(
                         selected = activeIndex == index,
                         onClick = { selectedSubTab = index },
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         text = {
                             Text(
                                 text = title,
@@ -186,7 +188,7 @@ fun TracksView(viewModel: MediaViewModel) {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(bottom = 80.dp)
+                    contentPadding = PaddingValues(bottom = 160.dp)
                 ) {
                     itemsIndexed(songs) { index, song ->
                         val isCurrent = song.path == activeSong?.path
@@ -305,7 +307,7 @@ fun AlbumsView(viewModel: MediaViewModel) {
     } else {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(140.dp),
-            contentPadding = PaddingValues(bottom = 80.dp),
+            contentPadding = PaddingValues(bottom = 160.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -315,7 +317,7 @@ fun AlbumsView(viewModel: MediaViewModel) {
                     title = album,
                     subtitle = "${albumSongs.size} Tracks",
                     icon = Icons.Filled.Album,
-                    gradientColors = listOf(DarkSecondary, DarkPrimary),
+                    gradientColors = listOf(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.primary),
                     songPath = albumSongs.firstOrNull()?.path,
                     onClick = {
                         viewModel.playSongAtIndex(albumSongs, 0)
@@ -335,7 +337,7 @@ fun ArtistsView(viewModel: MediaViewModel) {
     } else {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(140.dp),
-            contentPadding = PaddingValues(bottom = 80.dp),
+            contentPadding = PaddingValues(bottom = 160.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -345,7 +347,7 @@ fun ArtistsView(viewModel: MediaViewModel) {
                     title = artist,
                     subtitle = "${artistSongs.size} Tracks",
                     icon = Icons.Filled.Person,
-                    gradientColors = listOf(DarkSecondary, Color(0xFFE040FB)),
+                    gradientColors = listOf(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary),
                     songPath = artistSongs.firstOrNull()?.path,
                     onClick = {
                         viewModel.playSongAtIndex(artistSongs, 0)
@@ -365,7 +367,7 @@ fun GenresView(viewModel: MediaViewModel) {
     } else {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(140.dp),
-            contentPadding = PaddingValues(bottom = 80.dp),
+            contentPadding = PaddingValues(bottom = 160.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -375,7 +377,7 @@ fun GenresView(viewModel: MediaViewModel) {
                     title = genre,
                     subtitle = "${genreSongs.size} Songs",
                     icon = Icons.Filled.MusicNote,
-                    gradientColors = listOf(DarkSecondary, DarkTertiary),
+                    gradientColors = listOf(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary),
                     songPath = genreSongs.firstOrNull()?.path,
                     onClick = {
                         viewModel.playSongAtIndex(genreSongs, 0)
@@ -403,18 +405,18 @@ fun PlaylistsView(viewModel: MediaViewModel) {
         ) {
             Text(
                 "My Library Folders",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
             Button(
                 onClick = { showPlaylistMaker = true },
-                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = Color.Black)
+                Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Create New", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Create New", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -423,7 +425,7 @@ fun PlaylistsView(viewModel: MediaViewModel) {
         if (playlists.isEmpty()) {
             EmptyBox(message = "No custom playlists created yet.")
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 80.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 160.dp)) {
                 items(playlists) { pl ->
                     val isExpanded = activePlaylist?.playlistId == pl.playlistId
                     Card(
@@ -432,7 +434,7 @@ fun PlaylistsView(viewModel: MediaViewModel) {
                             .clickable { viewModel.selectPlaylist(pl) },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         shape = RoundedCornerShape(12.dp),
-                        border = if (isExpanded) BorderStroke(1.dp, DarkPrimary) else null
+                        border = if (isExpanded) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -444,21 +446,21 @@ fun PlaylistsView(viewModel: MediaViewModel) {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Icon(Icons.Filled.QueueMusic, contentDescription = null, tint = DarkPrimary)
+                                    Icon(Icons.Filled.QueueMusic, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                     Column {
-                                        Text(pl.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                        Text("Playlists category folder", color = Color.Gray, fontSize = 11.sp)
+                                        Text(pl.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Text("Playlists category folder", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 11.sp)
                                     }
                                 }
                                 IconButton(onClick = { viewModel.deletePlaylist(pl.playlistId) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color.Gray)
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
 
                             if (isExpanded) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 if (selectedPlaylistSongs.isEmpty()) {
-                                    Text("Add songs from the Tracks tab using (+) button.", color = Color.Gray, fontSize = 12.sp)
+                                    Text("Add songs from the Tracks tab using (+) button.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         selectedPlaylistSongs.forEachIndexed { sIdx, s ->
@@ -470,9 +472,9 @@ fun PlaylistsView(viewModel: MediaViewModel) {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(s.title, color = DarkPrimary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                                Text(s.title, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                                 IconButton(onClick = { viewModel.removeSongFromPlaylist(pl.playlistId, s.path) }, modifier = Modifier.size(24.dp)) {
-                                                    Icon(Icons.Filled.Close, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Filled.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                                                 }
                                             }
                                         }
@@ -489,15 +491,18 @@ fun PlaylistsView(viewModel: MediaViewModel) {
     if (showPlaylistMaker) {
         AlertDialog(
             onDismissRequest = { showPlaylistMaker = false },
-            title = { Text("New Playlist Name", color = Color.White) },
+            title = { Text("New Playlist Name", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 OutlinedTextField(
                     value = newPlaylistName,
                     onValueChange = { newPlaylistName = it },
                     placeholder = { Text("e.g. Midnight Grooves") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DarkPrimary,
-                        cursorColor = DarkPrimary
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        cursorColor = MaterialTheme.colorScheme.primary
                     )
                 )
             },
@@ -509,12 +514,12 @@ fun PlaylistsView(viewModel: MediaViewModel) {
                         showPlaylistMaker = false
                     }
                 }) {
-                    Text("Create", color = DarkPrimary, fontWeight = FontWeight.Bold)
+                    Text("Create", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showPlaylistMaker = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
                 }
             }
         )
@@ -536,7 +541,7 @@ fun FavoritesView(viewModel: MediaViewModel) {
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                contentPadding = PaddingValues(bottom = 160.dp)
             ) {
                 itemsIndexed(favorites) { index, song ->
                     SongListItem(
@@ -634,12 +639,12 @@ fun SongListItem(
                 }
             ),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) DarkPrimary.copy(alpha = 0.2f)
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
             else if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
             else MaterialTheme.colorScheme.surface
         ),
         shape = RoundedCornerShape(12.dp),
-        border = if (isSelected) BorderStroke(1.5.dp, DarkPrimary) else null
+        border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -651,9 +656,9 @@ fun SongListItem(
                     checked = isSelected,
                     onCheckedChange = onSelectedChange,
                     colors = CheckboxDefaults.colors(
-                        checkedColor = DarkPrimary,
-                        uncheckedColor = Color.Gray,
-                        checkmarkColor = Color.Black
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary
                     )
                 )
             }
@@ -682,7 +687,7 @@ fun SongListItem(
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.PlayArrow,
                             contentDescription = "Playback Action Overlay",
-                            tint = DarkPrimary,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -692,7 +697,7 @@ fun SongListItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = song.title,
-                    color = if (isCurrent) DarkPrimary else Color.White,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     maxLines = 1,
@@ -705,15 +710,15 @@ fun SongListItem(
                 ) {
                     Text(
                         text = song.artist,
-                        color = Color.LightGray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text("•", color = Color.Gray, fontSize = 10.sp)
+                    Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 10.sp)
                     Text(
                         text = formatDuration(song.duration),
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         fontSize = 11.sp
                     )
                 }
@@ -725,7 +730,7 @@ fun SongListItem(
                         Icon(
                             if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                             contentDescription = "Favorite",
-                            tint = if (song.isFavorite) Color.Red else Color.Gray,
+                            tint = if (song.isFavorite) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -733,7 +738,7 @@ fun SongListItem(
                         Icon(
                             Icons.Filled.MoreVert,
                             contentDescription = "More Actions",
-                            tint = Color.Gray,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -758,7 +763,7 @@ fun CollectionCard(
             .height(115.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
     ) {
         Box(
             modifier = Modifier.fillMaxSize()
@@ -786,6 +791,16 @@ fun CollectionCard(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Brush.verticalGradient(gradientColors))
+                )
+                // Overlay text scrim
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f))
+                            )
+                        )
                 )
             }
 
@@ -835,17 +850,17 @@ fun AddToPlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Save Song Into Playlist Folder", color = Color.White) },
+        title = { Text("Save Song Into Playlist Folder", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Select playlist category for target track: ${song.title}", color = Color.Gray, fontSize = 12.sp)
+                Text("Select playlist category for target track: ${song.title}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (playlists.isEmpty()) {
-                    Text("No playlists created yet. Create a playlist first using the Playlists tab.", color = DarkPrimary, fontSize = 13.sp)
+                    Text("No playlists created yet. Create a playlist first using the Playlists tab.", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(playlists) { pl ->
@@ -863,8 +878,8 @@ fun AddToPlaylistDialog(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Filled.Folder, contentDescription = null, tint = DarkPrimary)
-                                    Text(pl.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Text(pl.name, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -952,8 +967,8 @@ fun SongContextMenuBottomSheet(
                     Icon(Icons.Filled.MusicNote, contentDescription = null, tint = DarkPrimary)
                 }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(song.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                    Text(song.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                    Text(song.title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                    Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 12.sp, maxLines = 1)
                 }
             }
 
@@ -961,45 +976,45 @@ fun SongContextMenuBottomSheet(
 
             // Action Items
             DropdownMenuItem(
-                text = { Text("Immediately Play", color = Color.White) },
+                text = { Text("Immediately Play", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     viewModel.playSongAtIndex(listOf(song), 0)
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = DarkPrimary) }
+                leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
             )
 
             DropdownMenuItem(
-                text = { Text("Play Next in Line", color = Color.White) },
+                text = { Text("Play Next in Line", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     viewModel.playNext(song)
                     android.widget.Toast.makeText(context, "Track will play next", android.widget.Toast.LENGTH_SHORT).show()
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.QueuePlayNext, contentDescription = null, tint = DarkPrimary) }
+                leadingIcon = { Icon(Icons.Filled.QueuePlayNext, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
             )
 
             DropdownMenuItem(
-                text = { Text("Enqueue Track", color = Color.White) },
+                text = { Text("Enqueue Track", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     viewModel.addToQueue(song)
                     android.widget.Toast.makeText(context, "Added track to queue", android.widget.Toast.LENGTH_SHORT).show()
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null, tint = DarkPrimary) }
+                leadingIcon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
             )
 
             DropdownMenuItem(
-                text = { Text("Add Track to Playlist Folder", color = Color.White) },
+                text = { Text("Add Track to Playlist Folder", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     onAddToPlaylist()
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.CreateNewFolder, contentDescription = null, tint = DarkSecondary) }
+                leadingIcon = { Icon(Icons.Filled.CreateNewFolder, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) }
             )
 
             DropdownMenuItem(
-                text = { Text(if (song.isFavorite) "Remove Bookmark" else "Bookmark Track", color = Color.White) },
+                text = { Text(if (song.isFavorite) "Remove Bookmark" else "Bookmark Track", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     viewModel.toggleFavorite(song)
                     onDismissRequest()
@@ -1008,7 +1023,7 @@ fun SongContextMenuBottomSheet(
             )
 
             DropdownMenuItem(
-                text = { Text("Share Track File", color = Color.White) },
+                text = { Text("Share Track File", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     try {
                         val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -1022,16 +1037,16 @@ fun SongContextMenuBottomSheet(
                     }
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null, tint = DarkSecondary) }
+                leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) }
             )
 
             DropdownMenuItem(
-                text = { Text("Rename Display Name", color = Color.White) },
+                text = { Text("Rename Display Name", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     onShowRenameDialog()
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, tint = DarkTertiary) }
+                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) }
             )
 
             DropdownMenuItem(
@@ -1044,27 +1059,27 @@ fun SongContextMenuBottomSheet(
             )
 
             DropdownMenuItem(
-                text = { Text("Inspect Technical Details", color = Color.White) },
+                text = { Text("Inspect Technical Details", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     onShowDetailsDialog()
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = DarkTertiary) }
+                leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) }
             )
 
             DropdownMenuItem(
-                text = { Text("Show Folder Directory Location", color = Color.White) },
+                text = { Text("Show Folder Directory Location", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     val index = song.path.lastIndexOf('/')
                     val parentFolder = if (index != -1) song.path.substring(0, index) else "Root"
                     android.widget.Toast.makeText(context, "Location: $parentFolder", android.widget.Toast.LENGTH_LONG).show()
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = DarkPrimary) }
+                leadingIcon = { Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
             )
 
             DropdownMenuItem(
-                text = { Text("Configure Set as Ringtone", color = Color.White) },
+                text = { Text("Configure Set as Ringtone", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     try {
                         android.widget.Toast.makeText(context, "Set '${song.title}' as system ringtone.", android.widget.Toast.LENGTH_SHORT).show()
@@ -1073,16 +1088,16 @@ fun SongContextMenuBottomSheet(
                     }
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = DarkTertiary) }
+                leadingIcon = { Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) }
             )
 
             DropdownMenuItem(
-                text = { Text("Activate Multi-Selection Mode", color = Color.White) },
+                text = { Text("Activate Multi-Selection Mode", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     onSelectMultiple()
                     onDismissRequest()
                 },
-                leadingIcon = { Icon(Icons.Filled.Checklist, contentDescription = null, tint = DarkPrimary) }
+                leadingIcon = { Icon(Icons.Filled.Checklist, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
             )
         }
     }
@@ -1097,15 +1112,16 @@ fun RenameDialog(
     var textState by remember { mutableStateOf(song.title) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename Media Title", color = Color.White) },
+        title = { Text("Rename Media Title", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             OutlinedTextField(
                 value = textState,
                 onValueChange = { textState = it },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = DarkPrimary,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                 ),
                 singleLine = true
             )
@@ -1118,14 +1134,14 @@ fun RenameDialog(
                     }
                     onDismiss()
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("Save", color = Color.Black)
+                Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Gray)
+                Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
             }
         }
     )
@@ -1140,7 +1156,7 @@ fun DeleteConfirmationDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Delete Track File?", color = Color.Red) },
-        text = { Text("Are you absolutely sure you want to remove '${song.title}' from index? This cannot be undone automatically unless rescanned.", color = Color.LightGray) },
+        text = { Text("Are you absolutely sure you want to remove '${song.title}' from index? This cannot be undone automatically unless rescanned.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
         confirmButton = {
             Button(
                 onClick = {
@@ -1154,7 +1170,7 @@ fun DeleteConfirmationDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Gray)
+                Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
             }
         }
     )
@@ -1206,7 +1222,7 @@ fun DetailsDialog(
         title = {
             Text(
                 text = "Info",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Black,
                 fontSize = 18.sp
             )
@@ -1217,18 +1233,18 @@ fun DetailsDialog(
                 modifier = Modifier.padding(top = 4.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Title", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(song.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Title", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(song.title, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
                 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Artist", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(song.artist, color = Color.White, fontSize = 14.sp)
+                    Text("Artist", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(song.artist, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Album", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(song.album, color = Color.LightGray, fontSize = 13.sp)
+                    Text("Album", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
 
                 Row(
@@ -1236,12 +1252,12 @@ fun DetailsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Duration", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(formatDuration(song.duration), color = Color.White, fontSize = 13.sp)
+                        Text("Duration", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(formatDuration(song.duration), color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Size", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(fileSizeFormatted, color = Color.White, fontSize = 13.sp)
+                        Text("Size", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(fileSizeFormatted, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                     }
                 }
 
@@ -1250,20 +1266,20 @@ fun DetailsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Format Codec", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(song.path.substringAfterLast('.', "Unknown").uppercase(), color = Color.White, fontSize = 13.sp)
+                        Text("Format Codec", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(song.path.substringAfterLast('.', "Unknown").uppercase(), color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Modified Date", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(lastModifiedFormatted, color = Color.White, fontSize = 13.sp)
+                        Text("Modified Date", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(lastModifiedFormatted, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                     }
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("File Path", color = DarkPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("File Path", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text(
                         text = song.path,
-                        color = Color.LightGray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         lineHeight = 14.sp
                     )
@@ -1273,9 +1289,9 @@ fun DetailsDialog(
         confirmButton = {
             Button(
                 onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("Close", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text("Close", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
             }
         }
     )

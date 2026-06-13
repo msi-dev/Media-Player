@@ -99,7 +99,7 @@ fun FolderTab(
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         Text(
             text = "Storage Directories",
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             modifier = Modifier.padding(vertical = 8.dp)
@@ -143,7 +143,7 @@ fun FolderTab(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "System Media Explorer",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
@@ -205,7 +205,7 @@ fun FolderTab(
                                     Column {
                                         Text(
                                             folderName,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp,
                                             maxLines = 1,
@@ -264,7 +264,7 @@ fun FolderTab(
                                                 )
                                                 Text(
                                                     file.title,
-                                                    color = Color.White,
+                                                    color = MaterialTheme.colorScheme.onSurface,
                                                     fontSize = 13.sp,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis

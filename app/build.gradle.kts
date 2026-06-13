@@ -79,6 +79,7 @@ dependencies {
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
+  implementation(libs.androidx.compose.material3.windowsizeclass)
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
@@ -131,9 +132,10 @@ val generateSirajulKeystore = tasks.register("generateSirajulKeystore") {
     if (!keystoreFile.exists()) {
       println("Generative build: creating secure sign keystore...")
       try {
-        ProcessBuilder(
+        val exitCode = ProcessBuilder(
           "keytool", "-genkeypair", "-v",
           "-keystore", keystoreFile.absolutePath,
+          "-storetype", "JKS",
           "-keyalg", "RSA",
           "-keysize", "2048",
           "-validity", "10000",
@@ -142,6 +144,9 @@ val generateSirajulKeystore = tasks.register("generateSirajulKeystore") {
           "-storepass", "sirajulpassword",
           "-keypass", "sirajulpassword"
         ).inheritIO().start().waitFor()
+        if (exitCode != 0) {
+          throw GradleException("Keytool generation failed with exit code $exitCode")
+        }
       } catch (e: Exception) {
         throw GradleException("Failed to generate Sirajul custom signature key: ${e.message}")
       }
