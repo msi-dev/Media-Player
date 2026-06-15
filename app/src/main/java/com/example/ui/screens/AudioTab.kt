@@ -102,6 +102,7 @@ fun AudioTab(
             ) { tabName ->
                 when (tabName) {
                     "Tracks" -> TracksView(viewModel)
+                    "Recent" -> RecentView(viewModel)
                     "Album" -> AlbumsView(viewModel)
                     "Favorite" -> FavoritesView(viewModel)
                     "Playlist" -> PlaylistsView(viewModel)
@@ -1247,6 +1248,13 @@ fun DetailsDialog(
                     Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
 
+                if (song.year != "Unknown Year") {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Release Year", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(song.year, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -1295,4 +1303,244 @@ fun DetailsDialog(
             }
         }
     )
+}
+
+@Composable
+fun RecentView(viewModel: MediaViewModel) {
+    val recentItems by viewModel.recentlyPlayed.collectAsState()
+    val limitedRecent = remember(recentItems) { recentItems.take(10) }
+    
+    var activeMenuSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var playlistDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var renameDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var deleteDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+    var detailsDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
+
+    if (limitedRecent.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    Icons.Filled.History,
+                    contentDescription = null,
+                    tint = Color.Gray,
+                    modifier = Modifier.size(54.dp)
+                )
+                Text(
+                    text = "No history available.\nStart playing audio or video tracks.",
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+    } else {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 160.dp)
+            ) {
+                itemsIndexed(limitedRecent) { index, song ->
+                    RecentListItem(
+                        song = song,
+                        onClick = {
+                            viewModel.playMediaDirectly(song)
+                        },
+                        onLongClick = { activeMenuSong = song },
+                        onToggleFavorite = { viewModel.toggleFavorite(song) }
+                    )
+                }
+            }
+
+            activeMenuSong?.let { song ->
+                SongContextMenuBottomSheet(
+                    song = song,
+                    viewModel = viewModel,
+                    onDismissRequest = { activeMenuSong = null },
+                    onAddToPlaylist = { playlistDialogSong = song },
+                    onShowRenameDialog = { renameDialogSong = song },
+                    onShowDeleteDialog = { deleteDialogSong = song },
+                    onShowDetailsDialog = { detailsDialogSong = song },
+                    onSelectMultiple = {}
+                )
+            }
+
+            playlistDialogSong?.let { song ->
+                AddToPlaylistDialog(
+                    song = song,
+                    viewModel = viewModel,
+                    onDismiss = { playlistDialogSong = null }
+                )
+            }
+
+            renameDialogSong?.let { song ->
+                RenameDialog(
+                    song = song,
+                    onConfirm = { newTitle ->
+                        viewModel.renameMediaByPath(song.path, newTitle)
+                    },
+                    onDismiss = { renameDialogSong = null }
+                )
+            }
+
+            deleteDialogSong?.let { song ->
+                DeleteConfirmationDialog(
+                    song = song,
+                    onConfirm = {
+                        viewModel.deleteMediaByPath(song.path)
+                    },
+                    onDismiss = { deleteDialogSong = null }
+                )
+            }
+
+            detailsDialogSong?.let { song ->
+                DetailsDialog(
+                    song = song,
+                    onDismiss = { detailsDialogSong = null }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun RecentListItem(
+    song: MediaEntity,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleFavorite: () -> Unit
+) {
+    val relativeTime = remember(song.recentlyPlayed) {
+        val diff = System.currentTimeMillis() - song.recentlyPlayed
+        when {
+            diff < 60_000L -> "Just now"
+            diff < 3600_000L -> "${diff / 60_000L}m ago"
+            diff < 86400_000L -> "${diff / 3600_000L}h ago"
+            else -> "${diff / 86400_000L}d ago"
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Art / Thumbnail
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                AlbumArtImage(
+                    songPath = song.path,
+                    songTitle = song.title,
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (song.isVideo) Icons.Filled.Videocam else Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = song.title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    
+                    val badgeText = if (song.isVideo) "VIDEO" else "AUDIO"
+                    val badgeColor = if (song.isVideo) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                    Surface(
+                        color = badgeColor.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            color = badgeColor,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = if (song.isVideo) "Video File" else song.artist,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 10.sp)
+                    Text(
+                        text = relativeTime,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = "Favorite",
+                        tint = if (song.isFavorite) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = onLongClick) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "More Actions",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+    }
 }

@@ -12,6 +12,7 @@ data class MediaEntity(
     val album: String = "Unknown Album",
     val artist: String = "Unknown Artist",
     val genre: String = "Unknown Genre",
+    val year: String = "Unknown Year",
     val isVideo: Boolean = false,
     var isFavorite: Boolean = false,
     var recentlyPlayed: Long = 0L,

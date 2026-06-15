@@ -371,6 +371,8 @@ fun MiniPlayerCard(
     val totalTime by viewModel.duration.collectAsState()
     val isShuffle by viewModel.isShuffleEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+    var showMiniSpeedDialog by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -449,13 +451,24 @@ fun MiniPlayerCard(
                             modifier = Modifier.size(32.dp)
                         )
                     }
-                    IconButton(onClick = { viewModel.stop() }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Filled.Stop,
-                            contentDescription = "Stop",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(24.dp)
-                        )
+                    IconButton(onClick = { showMiniSpeedDialog = true }, modifier = Modifier.size(36.dp)) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.SlowMotionVideo,
+                                contentDescription = "Speed",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "${playbackSpeed}x",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                     IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
@@ -512,6 +525,43 @@ fun MiniPlayerCard(
                 )
             }
         }
+    }
+
+    if (showMiniSpeedDialog) {
+        AlertDialog(
+            onDismissRequest = { showMiniSpeedDialog = false },
+            title = { Text("Playback Speed", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+                    speeds.forEach { speed ->
+                        val selected = playbackSpeed == speed
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.setPlaybackSpeed(speed)
+                                    showMiniSpeedDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 12.dp)
+                                .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent, shape = RoundedCornerShape(8.dp)),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${speed}x", color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                            if (selected) {
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMiniSpeedDialog = false }) {
+                    Text("Close", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        )
     }
 }
 

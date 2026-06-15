@@ -138,11 +138,25 @@ class MediaRepository(
                     
                     // Verify if format is supported natively
                     if (NativeMediaBridge.isFormatSupported(format)) {
-                        val title = cursor.getString(titleIndex)
-                        val duration = cursor.getLong(durationIndex)
+                        var title = cursor.getString(titleIndex) ?: java.io.File(path).nameWithoutExtension
+                        var duration = cursor.getLong(durationIndex)
                         val size = cursor.getLong(sizeIndex)
-                        val album = cursor.getString(albumIndex) ?: "Unknown Album"
-                        val artist = cursor.getString(artistIndex) ?: "Unknown Artist"
+                        var album = cursor.getString(albumIndex) ?: "Unknown Album"
+                        var artist = cursor.getString(artistIndex) ?: "Unknown Artist"
+                        var genre = "Unknown Genre"
+                        var year = "Unknown Year"
+
+                        try {
+                            val meta = com.example.data.util.MetadataParser.extractMetadata(context, path)
+                            meta.title?.let { if (it.isNotBlank()) title = it }
+                            meta.artist?.let { if (it.isNotBlank()) artist = it }
+                            meta.album?.let { if (it.isNotBlank()) album = it }
+                            meta.genre?.let { if (it.isNotBlank()) genre = it }
+                            meta.year?.let { if (it.isNotBlank()) year = it }
+                            meta.duration?.let { if (it > 0) duration = it }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error extracting metadata for $path: ${e.message}")
+                        }
 
                         foundMedia.add(
                             MediaEntity(
@@ -152,6 +166,8 @@ class MediaRepository(
                                 size = size,
                                 album = album,
                                 artist = artist,
+                                genre = genre,
+                                year = year,
                                 isVideo = false
                             )
                         )
@@ -193,9 +209,25 @@ class MediaRepository(
                     val format = NativeMediaBridge.detectFormat(path)
 
                     if (NativeMediaBridge.isFormatSupported(format)) {
-                        val title = cursor.getString(titleIndex)
-                        val duration = cursor.getLong(durationIndex)
+                        var title = cursor.getString(titleIndex) ?: java.io.File(path).nameWithoutExtension
+                        var duration = cursor.getLong(durationIndex)
                         val size = cursor.getLong(sizeIndex)
+                        var album = "Video Folder"
+                        var artist = "Video Provider"
+                        var genre = "Video Genre"
+                        var year = "Unknown Year"
+
+                        try {
+                            val meta = com.example.data.util.MetadataParser.extractMetadata(context, path)
+                            meta.title?.let { if (it.isNotBlank()) title = it }
+                            meta.artist?.let { if (it.isNotBlank()) artist = it }
+                            meta.album?.let { if (it.isNotBlank()) album = it }
+                            meta.genre?.let { if (it.isNotBlank()) genre = it }
+                            meta.year?.let { if (it.isNotBlank()) year = it }
+                            meta.duration?.let { if (it > 0) duration = it }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error extracting video metadata for $path: ${e.message}")
+                        }
 
                         foundMedia.add(
                             MediaEntity(
@@ -203,8 +235,10 @@ class MediaRepository(
                                 title = title,
                                 duration = duration,
                                 size = size,
-                                album = "Video Folder",
-                                artist = "Video Provider",
+                                album = album,
+                                artist = artist,
+                                genre = genre,
+                                year = year,
                                 isVideo = true
                             )
                         )

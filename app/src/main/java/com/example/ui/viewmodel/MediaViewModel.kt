@@ -155,8 +155,8 @@ class MediaViewModel(
         prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
     }
 
-    // Configurable Sub-Tabs defaults ordered according to Tracks, Album, Favorite, Playlist, then others
-    val defaultTabs = listOf("Tracks", "Album", "Favorite", "Playlist", "Artists", "Genres")
+    // Configurable Sub-Tabs defaults ordered according to Tracks, Recent, Album, Favorite, Playlist, then others
+    val defaultTabs = listOf("Tracks", "Recent", "Album", "Favorite", "Playlist", "Artists", "Genres")
     
     private val _visibleTabs = MutableStateFlow<List<String>>(loadSavedTabs())
     val visibleTabs = _visibleTabs.asStateFlow()
