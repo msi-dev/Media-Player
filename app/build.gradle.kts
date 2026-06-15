@@ -162,3 +162,35 @@ tasks.matching {
 }.configureEach {
   dependsOn(generateSirajulKeystore)
 }
+
+// Automatically copy the built debug APK to both .build-outputs and .build_outpu directories
+val copyApkToOutput = tasks.register("copyApkToOutput") {
+  val projectDirectory = layout.projectDirectory
+  val apkFileProp = projectDirectory.file("build/outputs/apk/debug/app-debug.apk")
+  val targetDir1Prop = projectDirectory.dir("../.build-outputs")
+  val targetDir2Prop = projectDirectory.dir("../.build_outpu")
+
+  inputs.file(apkFileProp).optional()
+  outputs.dirs(targetDir1Prop, targetDir2Prop)
+
+  doLast {
+    val apkFile = apkFileProp.asFile
+    if (apkFile.exists()) {
+      val targetDir1 = targetDir1Prop.asFile
+      val targetDir2 = targetDir2Prop.asFile
+      targetDir1.mkdirs()
+      targetDir2.mkdirs()
+      
+      apkFile.copyTo(File(targetDir1, "app-debug.apk"), overwrite = true)
+      apkFile.copyTo(File(targetDir2, "app-debug.apk"), overwrite = true)
+      apkFile.copyTo(File(targetDir2, "app.apk"), overwrite = true)
+      println("Successfully copied APK to build output storage.")
+    } else {
+      println("Gradle Build Info: app-debug.apk not found.")
+    }
+  }
+}
+
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+  finalizedBy(copyApkToOutput)
+}
