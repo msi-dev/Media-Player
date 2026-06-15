@@ -21,6 +21,9 @@ fun CustomAospSeekBar(
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
     val displayProgress = if (isDragging) dragProgress else progress
@@ -29,31 +32,31 @@ fun CustomAospSeekBar(
         modifier = modifier
             .fillMaxWidth()
             .height(36.dp) // Generous clickable & draggable area
-            .pointerInput(progress) {
+            .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
                         isDragging = true
                         val widthPx = size.width.toFloat()
                         val newProgress = (offset.x / widthPx).coerceIn(0f, 1f)
                         dragProgress = newProgress
-                        onValueChange(newProgress)
+                        currentOnValueChange(newProgress)
                         tryAwaitRelease()
                         isDragging = false
-                        onValueChangeFinished()
+                        currentOnValueChangeFinished()
                     }
                 )
             }
-            .pointerInput(progress) {
+            .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { offset ->
                         isDragging = true
                         val widthPx = size.width.toFloat()
                         dragProgress = (offset.x / widthPx).coerceIn(0f, 1f)
-                        onValueChange(dragProgress)
+                        currentOnValueChange(dragProgress)
                     },
                     onDragEnd = {
                         isDragging = false
-                        onValueChangeFinished()
+                        currentOnValueChangeFinished()
                     },
                     onDragCancel = {
                         isDragging = false
@@ -62,7 +65,7 @@ fun CustomAospSeekBar(
                         change.consume()
                         val widthPx = size.width.toFloat()
                         dragProgress = (change.position.x / widthPx).coerceIn(0f, 1f)
-                        onValueChange(dragProgress)
+                        currentOnValueChange(dragProgress)
                     }
                 )
             }

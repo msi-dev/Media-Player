@@ -67,6 +67,9 @@ interface MediaDao {
     @Query("DELETE FROM playlist_songs WHERE playlistId = :playlistId AND songPath = :songPath")
     suspend fun removeSongFromPlaylist(playlistId: Long, songPath: String)
 
+    @Query("SELECT * FROM media_items WHERE path IN (:paths)")
+    suspend fun getMediaByPaths(paths: List<String>): List<MediaEntity>
+
     @Transaction
     @Query("SELECT media_items.* FROM media_items INNER JOIN playlist_songs ON media_items.path = playlist_songs.songPath WHERE playlist_songs.playlistId = :playlistId ORDER BY media_items.title ASC")
     fun getSongsInPlaylist(playlistId: Long): Flow<List<MediaEntity>>

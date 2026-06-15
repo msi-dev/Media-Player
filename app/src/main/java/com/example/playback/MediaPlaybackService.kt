@@ -8,6 +8,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.MediaPlayerApp
+import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 class MediaPlaybackService : MediaSessionService() {
@@ -30,6 +31,8 @@ class MediaPlaybackService : MediaSessionService() {
                 .setSessionActivity(getBackIntent())
                 .build()
             
+            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
+            
             player.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     updateNotification()
@@ -39,6 +42,17 @@ class MediaPlaybackService : MediaSessionService() {
                     updateNotification()
                 }
             })
+
+            scope.launch {
+                app.playbackManager.currentlyPlayingVideo.collect {
+                    updateNotification()
+                }
+            }
+            scope.launch {
+                app.playbackManager.isVideoBackgroundPlayEnabled.collect {
+                    updateNotification()
+                }
+            }
 
             // Initial notification update
             updateNotification()
@@ -77,18 +91,58 @@ class MediaPlaybackService : MediaSessionService() {
                 "ACTION_PREVIOUS" -> playbackManager.playPrevious()
             }
         }
+        updateNotification()
         return super.onStartCommand(intent, flags, startId)
     }
 
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var updatePending = false
+    private var lastUpdateTime = 0L
+    private var isForeground = false
+
+    private val updateRunnable = Runnable {
+        updatePending = false
+        performUpdateNotification()
+    }
+
     private fun updateNotification() {
+        val now = System.currentTimeMillis()
+        val timeSinceLastUpdate = now - lastUpdateTime
+        
+        if (!isForeground || timeSinceLastUpdate >= 500L) {
+            handler.removeCallbacks(updateRunnable)
+            performUpdateNotification()
+        } else {
+            if (!updatePending) {
+                updatePending = true
+                handler.removeCallbacks(updateRunnable)
+                handler.postDelayed(updateRunnable, 500L - timeSinceLastUpdate)
+            }
+        }
+    }
+
+    private fun performUpdateNotification() {
+        lastUpdateTime = System.currentTimeMillis()
         val app = application as MediaPlayerApp
         val playbackManager = app.playbackManager
         val currentSong = playbackManager.currentSong.value
+        val currentlyPlayingVideo = playbackManager.currentlyPlayingVideo.value
+        val isVideoBgPlay = playbackManager.isVideoBackgroundPlayEnabled.value
         val isPlaying = playbackManager.isPlaying.value
         val session = mediaSession
 
-        if (currentSong != null && session != null) {
-            val notification = NotificationManager.buildMediaNotification(
+        val notification = if (currentlyPlayingVideo != null && isVideoBgPlay && session != null) {
+            NotificationManager.buildVideoMediaNotification(
+                context = this,
+                mediaSession = session,
+                title = currentlyPlayingVideo.title,
+                artist = currentlyPlayingVideo.artist,
+                videoPath = currentlyPlayingVideo.path,
+                isPlaying = isPlaying
+            )
+        } else if (currentSong != null && session != null) {
+            NotificationManager.deleteVideoNotificationChannel(this)
+            NotificationManager.buildMediaNotification(
                 context = this,
                 mediaSession = session,
                 title = currentSong.title,
@@ -96,32 +150,48 @@ class MediaPlaybackService : MediaSessionService() {
                 largeIcon = null,
                 isPlaying = isPlaying
             )
+        } else {
+            NotificationManager.deleteVideoNotificationChannel(this)
+            androidx.core.app.NotificationCompat.Builder(this, NotificationManager.CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle(currentSong?.title ?: currentlyPlayingVideo?.title ?: "Media Player")
+                .setContentText(currentSong?.artist ?: currentlyPlayingVideo?.artist ?: "Initializing playback...")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+                .setOngoing(isPlaying)
+                .build()
+        }
 
-            if (isPlaying) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NotificationManager.NOTIFICATION_ID,
-                        notification,
-                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    )
-                } else {
-                    startForeground(NotificationManager.NOTIFICATION_ID, notification)
-                }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                startForeground(
+                    NotificationManager.NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
             } else {
-                val androidNotificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                androidNotificationManager.notify(NotificationManager.NOTIFICATION_ID, notification)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_DETACH)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(false)
-                }
+                startForeground(NotificationManager.NOTIFICATION_ID, notification)
             }
+            isForeground = true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed startForeground: ${e.message}")
+        }
+
+        if (!isPlaying) {
+            val androidNotificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            androidNotificationManager.notify(NotificationManager.NOTIFICATION_ID, notification)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_DETACH)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(false)
+            }
+            isForeground = false
         }
     }
 
     override fun onDestroy() {
         Log.i(TAG, "Disposing MediaSession background service...")
+        handler.removeCallbacks(updateRunnable)
         mediaSession?.run {
             release()
             mediaSession = null

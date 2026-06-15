@@ -43,6 +43,24 @@ class PlaybackManager(private val context: Context) {
 
     val visualizerManager = AudioVisualizerManager()
 
+    private val statePrefs by lazy {
+        context.getSharedPreferences("playback_state_persistence", Context.MODE_PRIVATE)
+    }
+
+    fun saveState() {
+        val currentSongPath = _currentSong.value?.path ?: ""
+        val pos = if (Looper.myLooper() == Looper.getMainLooper()) player.currentPosition else 0L
+        val queuePaths = _playbackQueue.value.map { it.path }.joinToString(",")
+        
+        statePrefs.edit()
+            .putString("persisted_current_song_path", currentSongPath)
+            .putLong("persisted_current_position", pos)
+            .putString("persisted_playback_queue", queuePaths)
+            .putBoolean("persisted_shuffle_enabled", _isShuffleEnabled.value)
+            .putInt("persisted_repeat_mode", _repeatMode.value)
+            .apply()
+    }
+
     // Base Media3 ExoPlayer
     val player: ExoPlayer = run {
         val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
@@ -57,6 +75,20 @@ class PlaybackManager(private val context: Context) {
     // Observables (StateFlows) conforming to MVVM guidelines
     private val _currentSong = MutableStateFlow<MediaEntity?>(null)
     val currentSong: StateFlow<MediaEntity?> = _currentSong.asStateFlow()
+
+    private val _currentlyPlayingVideo = MutableStateFlow<MediaEntity?>(null)
+    val currentlyPlayingVideo: StateFlow<MediaEntity?> = _currentlyPlayingVideo.asStateFlow()
+
+    private val _isVideoBackgroundPlayEnabled = MutableStateFlow(false)
+    val isVideoBackgroundPlayEnabled: StateFlow<Boolean> = _isVideoBackgroundPlayEnabled.asStateFlow()
+
+    fun setCurrentlyPlayingVideo(video: MediaEntity?) {
+        _currentlyPlayingVideo.value = video
+    }
+
+    fun setVideoBackgroundPlayEnabled(enabled: Boolean) {
+        _isVideoBackgroundPlayEnabled.value = enabled
+    }
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -114,19 +146,25 @@ class PlaybackManager(private val context: Context) {
 
     // Handler to poll seekbar / timelines
     private val updateHandler = Handler(Looper.getMainLooper())
+    private var lastDbWriteTime = 0L
     private val updateRunnable = object : Runnable {
         override fun run() {
             if (player.isPlaying) {
                 val pos = player.currentPosition
                 _currentPosition.value = pos
                 _duration.value = player.duration.coerceAtLeast(0L)
-                _currentSong.value?.let { song ->
-                    scope.launch(Dispatchers.IO) {
-                        repository.updateLastPlayedPosition(song.path, pos)
+                val now = System.currentTimeMillis()
+                if (now - lastDbWriteTime > 3000L) {
+                    lastDbWriteTime = now
+                    _currentSong.value?.let { song ->
+                        scope.launch(Dispatchers.IO) {
+                            repository.updateLastPlayedPosition(song.path, pos)
+                        }
                     }
+                    saveState()
                 }
             }
-            updateHandler.postDelayed(this, 1000)
+            updateHandler.postDelayed(this, 250)
         }
     }
 
@@ -190,6 +228,7 @@ class PlaybackManager(private val context: Context) {
                             visualizerManager.setPlaying(true)
                         }
                     }
+                    saveState()
                 }
             }
 
@@ -272,6 +311,7 @@ class PlaybackManager(private val context: Context) {
         
         _currentSong.value = songs[startPosition]
         _duration.value = player.duration.coerceAtLeast(0L)
+        saveState()
     }
 
     fun play() {
@@ -297,6 +337,7 @@ class PlaybackManager(private val context: Context) {
     fun seekTo(positionMs: Long) {
         player.seekTo(positionMs)
         _currentPosition.value = positionMs
+        saveState()
     }
 
     fun playNext() {
@@ -323,6 +364,7 @@ class PlaybackManager(private val context: Context) {
         _isShuffleEnabled.value = nextShuffle
         player.shuffleModeEnabled = nextShuffle
         Log.i(TAG, "Shuffle Toggled to: $nextShuffle")
+        saveState()
     }
 
     fun toggleRepeatMode() {
@@ -335,6 +377,7 @@ class PlaybackManager(private val context: Context) {
             else -> Player.REPEAT_MODE_OFF
         }
         Log.i(TAG, "Repeat Mode updated: $nextMode")
+        saveState()
     }
 
     fun setPlaybackSpeed(speed: Float) {
@@ -380,6 +423,25 @@ class PlaybackManager(private val context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error adjusting Equalizer Hardware Band $band: ${e.message}")
+        }
+    }
+
+    fun setEqualizerPreset(levels: List<Int>) {
+        if (levels.size != 5) return
+        _eqBands.value = levels
+        try {
+            nativeEqualizer?.let { eq ->
+                if (eq.enabled) {
+                    for (i in 0 until 5) {
+                        val nativeBand = i.toShort()
+                        val valueMillibels = (levels[i] * 100).toShort()
+                        eq.setBandLevel(nativeBand, valueMillibels)
+                    }
+                    Log.i(TAG, "Equalizer preset applied: $levels")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting equalizer preset: ${e.message}")
         }
     }
 

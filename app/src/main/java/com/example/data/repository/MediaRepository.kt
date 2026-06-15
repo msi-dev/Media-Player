@@ -72,6 +72,10 @@ class MediaRepository(
         return mediaDao.getSongsInPlaylist(playlistId)
     }
 
+    suspend fun getMediaByPaths(paths: List<String>): List<MediaEntity> {
+        return mediaDao.getMediaByPaths(paths)
+    }
+
     /**
      * Performs scan of local system using MediaStore, with auto-injection of demo files if empty.
      */

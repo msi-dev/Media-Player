@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.db.MediaEntity
 import com.example.ui.components.AlbumArtImage
 import com.example.ui.components.CustomAospSeekBar
+import com.example.ui.components.AospVerticalSlider
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.theme.DarkTertiary
@@ -51,7 +52,7 @@ fun MainScreen(
     windowSizeClass: WindowSizeClass
 ) {
     val context = LocalContext.current
-    val tabs = remember { listOf("Audio", "Video", "Folders") }
+    val tabs = remember { listOf("Audio", "Video") }
     var activeTab by remember { mutableIntStateOf(0) }
     
     val safeActiveTab = remember(activeTab, tabs) {
@@ -67,6 +68,7 @@ fun MainScreen(
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     var isPlayerExpanded by remember { mutableStateOf(false) }
+    var isSidebarOpen by remember { mutableStateOf(false) }
 
     val searchQuery by viewModel.searchQuery.collectAsState()
 
@@ -104,13 +106,12 @@ fun MainScreen(
                     tabs.forEachIndexed { index, label ->
                         val icon = when (label) {
                             "Audio" -> Icons.Filled.Audiotrack
-                            "Video" -> Icons.Filled.Videocam
-                            else -> Icons.Filled.Folder
+                            else -> Icons.Filled.Videocam
                         }
                         NavigationRailItem(
                             selected = safeActiveTab == index,
                             onClick = { activeTab = index },
-                            icon = { Icon(icon, contentDescription = label) },
+                            icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(28.dp)) },
                             label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp) },
                             colors = NavigationRailItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onPrimary,
@@ -177,6 +178,18 @@ fun MainScreen(
                     )
 
                     IconButton(
+                        onClick = { isSidebarOpen = true },
+                        modifier = Modifier.size(54.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.QueueMusic,
+                            contentDescription = "Deck Playlist",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = {
                             val intent = Intent(context, com.example.SettingsActivity::class.java)
                             context.startActivity(intent)
@@ -199,8 +212,7 @@ fun MainScreen(
                     val activeTabLabel = if (safeActiveTab < tabs.size) tabs[safeActiveTab] else "Audio"
                     when (activeTabLabel) {
                         "Audio" -> AudioTab(viewModel)
-                        "Video" -> VideoTab(viewModel)
-                        else -> FolderTab(viewModel)
+                        else -> VideoTab(viewModel)
                     }
                 }
             }
@@ -263,13 +275,12 @@ fun MainScreen(
                     tabs.forEachIndexed { index, label ->
                         val icon = when (label) {
                             "Audio" -> Icons.Filled.MusicNote
-                            "Video" -> Icons.Filled.Videocam
-                            else -> Icons.Filled.Folder
+                            else -> Icons.Filled.Videocam
                         }
                         NavigationBarItem(
                             selected = safeActiveTab == index,
                             onClick = { activeTab = index },
-                            icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp)) },
+                            icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(26.dp)) },
                             label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 0.3.sp) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onPrimary,
@@ -282,6 +293,40 @@ fun MainScreen(
                     }
                 }
             }
+        }
+
+        // Sliding Sidebar Scrim (covers background layers)
+        AnimatedVisibility(
+            visible = isSidebarOpen,
+            enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(durationMillis = 300)),
+            exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(durationMillis = 250)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable { isSidebarOpen = false }
+            )
+        }
+
+        // Sliding Sidebar Playlist Container (slides from right edge)
+        AnimatedVisibility(
+            visible = isSidebarOpen,
+            enter = slideInHorizontally(
+                initialOffsetX = { it },
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f)
+            ) + fadeIn(),
+            exit = slideOutHorizontally(
+                targetOffsetX = { it },
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = 450f)
+            ) + fadeOut(),
+            modifier = Modifier.align(Alignment.CenterEnd)
+        ) {
+            PlaylistSidebar(
+                viewModel = viewModel,
+                onClose = { isSidebarOpen = false }
+            )
         }
     }
 
@@ -307,16 +352,6 @@ fun MainScreen(
             )
         }
     }
-
-    // Global Video Player overlay
-    val currentlyPlayingVideo by viewModel.currentlyPlayingVideo.collectAsState()
-    currentlyPlayingVideo?.let { video ->
-        VideoPlayerScreen(
-            video = video,
-            viewModel = viewModel,
-            onClose = { viewModel.setCurrentlyPlayingVideo(null) }
-        )
-    }
 }
 
 // Bottom floating bar
@@ -329,6 +364,8 @@ fun MiniPlayerCard(
 ) {
     val progress by viewModel.currentPosition.collectAsState()
     val totalTime by viewModel.duration.collectAsState()
+    val isShuffle by viewModel.isShuffleEnabled.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
 
     Card(
         modifier = Modifier
@@ -384,23 +421,34 @@ fun MiniPlayerCard(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    IconButton(onClick = { viewModel.playPrevious() }) {
-                        Icon(Icons.Filled.SkipPrevious, contentDescription = "Prev", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                    IconButton(onClick = { viewModel.toggleShuffle() }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle", tint = if (isShuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = { viewModel.playPrevious() }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.SkipPrevious, contentDescription = "Prev", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = {
                         if (isPlaying) viewModel.pause() else viewModel.play()
-                    }) {
+                    }, modifier = Modifier.size(38.dp)) {
                         Icon(
                             if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                             contentDescription = "PlayPause",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(32.dp)
                         )
                     }
-                    IconButton(onClick = { viewModel.playNext() }) {
-                        Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                    IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = { viewModel.toggleRepeatMode() }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            if (repeatMode == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                            contentDescription = "Repeat",
+                            tint = if (repeatMode > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
@@ -902,102 +950,11 @@ fun FullscreenPlayerSheet(
         )
     }
 
-    // Modern Interactive Parametric Equalizer Dialog
+    // Modern Interactive Parametric Equalizer Bottom Sheet
     if (showEqualizerDialog) {
-        val eqActive by viewModel.eqEnabled.collectAsState()
-        val bands by viewModel.eqBands.collectAsState()
-        val frequencies = listOf("60Hz", "230Hz", "910Hz", "4kHz", "14kHz")
-        
-        AlertDialog(
-            onDismissRequest = { showEqualizerDialog = false },
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Filled.Equalizer, contentDescription = null, tint = DarkPrimary)
-                        Text("Equalizer", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.White)
-                    }
-                    Switch(
-                        checked = eqActive,
-                        onCheckedChange = { viewModel.toggleEqualizer(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = DarkPrimary,
-                            checkedTrackColor = DarkPrimary.copy(alpha = 0.4f)
-                        )
-                    )
-                }
-            },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (eqActive) {
-                        bands.forEachIndexed { idx, sliderVal ->
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = frequencies.getOrElse(idx) { "Band ${idx + 1}" },
-                                        color = Color.LightGray,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = "${if (sliderVal >= 0) "+" else ""}${sliderVal} dB",
-                                        color = DarkPrimary,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Black
-                                    )
-                                }
-                                Slider(
-                                    value = sliderVal.toFloat(),
-                                    onValueChange = { newVal ->
-                                        viewModel.setEqualizerBand(idx, newVal.toInt())
-                                    },
-                                    valueRange = -15f..15f,
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = DarkPrimary,
-                                        activeTrackColor = DarkPrimary,
-                                        inactiveTrackColor = Color.DarkGray
-                                    )
-                                )
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(130.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Toggle active hardware frequencies on the top right to customize your ambient theater acoustics.",
-                                color = Color.Gray,
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showEqualizerDialog = false }) {
-                    Text("Done", color = DarkPrimary, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = Color(0xFF1E1E1E),
-            shape = RoundedCornerShape(20.dp)
+        EqualizerOverlayBottomSheet(
+            viewModel = viewModel,
+            onDismiss = { showEqualizerDialog = false }
         )
     }
 
@@ -1249,6 +1206,189 @@ fun AudioVisualizer(
                 size = androidx.compose.ui.geometry.Size((barWidth - 4.dp.toPx()).coerceAtLeast(1f), animatedHeight),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EqualizerOverlayBottomSheet(
+    viewModel: MediaViewModel,
+    onDismiss: () -> Unit
+) {
+    val eqActive by viewModel.eqEnabled.collectAsState()
+    val bands by viewModel.eqBands.collectAsState()
+    val frequencies = listOf("60Hz", "230Hz", "910Hz", "4kHz", "14kHz")
+    
+    val presets = listOf(
+        "Flat" to listOf(0, 0, 0, 0, 0),
+        "Bass Boost" to listOf(8, 5, 2, 0, -2),
+        "Vocal" to listOf(-2, 1, 4, 5, 2),
+        "Classic" to listOf(4, 2, -1, 2, 3),
+        "Electronic" to listOf(5, 4, 0, 3, 5),
+        "Jazz" to listOf(3, 1, 2, 2, -1),
+        "Pop" to listOf(-1, 2, 5, 1, -2),
+        "Rock" to listOf(5, 3, -1, 3, 4)
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        containerColor = Color(0xFF161616),
+        dragHandle = { BottomSheetDefaults.DragHandle(color = DarkPrimary) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Filled.Equalizer, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(28.dp))
+                    Text(
+                        text = "Professional Equalizer", 
+                        color = Color.White, 
+                        fontWeight = FontWeight.Black, 
+                        fontSize = 18.sp
+                    )
+                }
+                
+                Switch(
+                    checked = eqActive,
+                    onCheckedChange = { viewModel.toggleEqualizer(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = DarkPrimary,
+                        checkedTrackColor = DarkPrimary.copy(alpha = 0.4f),
+                        uncheckedThumbColor = Color.Gray,
+                        uncheckedTrackColor = Color.DarkGray
+                    )
+                )
+            }
+
+            if (eqActive) {
+                // Preset horizontal scrolling chips!
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Presets",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(presets.size) { index ->
+                            val preset = presets[index]
+                            val isSelected = bands == preset.second
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = if (isSelected) DarkPrimary else Color(0xFF262626),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .clickable {
+                                        viewModel.setEqualizerPreset(preset.second)
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = preset.first,
+                                    color = if (isSelected) Color.Black else Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Vertical Sliders Deck!
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    bands.forEachIndexed { idx, value ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "${if (value >= 0) "+" else ""}${value} dB",
+                                color = if (value != 0) DarkPrimary else Color.Gray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            
+                            AospVerticalSlider(
+                                value = value.toFloat(),
+                                onValueChange = { newVal ->
+                                    viewModel.setEqualizerBand(idx, newVal.toInt())
+                                },
+                                valueRange = -15f..15f
+                            )
+                            
+                            Text(
+                                text = frequencies.getOrElse(idx) { "" },
+                                color = Color.LightGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Equalizer, 
+                            contentDescription = null, 
+                            tint = Color.Gray.copy(alpha = 0.5f), 
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Text(
+                            text = "Equalizer is Disabled",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Toggle active hardware frequencies on the top right to customize your ambient theater acoustics.",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

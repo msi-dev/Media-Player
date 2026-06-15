@@ -210,11 +210,16 @@ class MediaViewModel(
     val activePlaylist = _activePlaylist.asStateFlow()
 
     // Video Playback configuration parameters
-    private val _currentlyPlayingVideo = MutableStateFlow<MediaEntity?>(null)
-    val currentlyPlayingVideo = _currentlyPlayingVideo.asStateFlow()
+    val currentlyPlayingVideo = playbackManager.currentlyPlayingVideo
 
     fun setCurrentlyPlayingVideo(video: MediaEntity?) {
-        _currentlyPlayingVideo.value = video
+        playbackManager.setCurrentlyPlayingVideo(video)
+    }
+
+    val isVideoBackgroundPlayEnabled = playbackManager.isVideoBackgroundPlayEnabled
+
+    fun setVideoBackgroundPlayEnabled(enabled: Boolean) {
+        playbackManager.setVideoBackgroundPlayEnabled(enabled)
     }
 
     private val _videoPlaybackSpeed = MutableStateFlow(1.0f)
@@ -263,37 +268,85 @@ class MediaViewModel(
             repository.scanLocalMedia(forceScan = false)
         }
 
-        // Smart Resume startup automation
+        // Persisted state and Smart Resume startup automation
         viewModelScope.launch {
             var hasResumed = false
             repository.allMedia.collect { allMediaList ->
                 if (!hasResumed && allMediaList.isNotEmpty()) {
-                    if (smartResumeEnabled.value) {
-                        hasResumed = true
-                        val lastItem = allMediaList.filter { it.recentlyPlayed > 0 }
-                            .maxByOrNull { it.recentlyPlayed }
-                        if (lastItem != null) {
-                            val targetPosition = lastItem.lastPlayedPosition
-                            Log.i(TAG, "Smart Resume: Restoring last active item ${lastItem.title} at $targetPosition ms.")
-                            
-                            val isVideo = lastItem.isVideo
-                            val rawCategoryList = if (isVideo) {
-                                allMediaList.filter { it.isVideo }
+                    hasResumed = true
+                    
+                    val statePrefs = application.getSharedPreferences("playback_state_persistence", android.content.Context.MODE_PRIVATE)
+                    val savedSongPath = statePrefs.getString("persisted_current_song_path", "") ?: ""
+                    val savedPos = statePrefs.getLong("persisted_current_position", 0L)
+                    val savedQueueStr = statePrefs.getString("persisted_playback_queue", "") ?: ""
+                    val savedShuffle = statePrefs.getBoolean("persisted_shuffle_enabled", false)
+                    val savedRepeat = statePrefs.getInt("persisted_repeat_mode", 0)
+
+                    if (savedQueueStr.isNotEmpty()) {
+                        val savedPaths = savedQueueStr.split(",").filter { it.isNotEmpty() }
+                        if (savedPaths.isNotEmpty()) {
+                            val dbItems = repository.getMediaByPaths(savedPaths)
+                            if (dbItems.isNotEmpty()) {
+                                val itemsMap = dbItems.associateBy { it.path }
+                                val orderedList = savedPaths.mapNotNull { itemsMap[it] }
+
+                                if (orderedList.isNotEmpty()) {
+                                    val activeIndex = orderedList.indexOfFirst { it.path == savedSongPath }.coerceAtLeast(0)
+                                    playbackManager.setQueue(orderedList, activeIndex)
+                                    if (savedPos > 0L) {
+                                        playbackManager.seekTo(savedPos)
+                                    }
+                                    
+                                    // Apply saved shuffle
+                                    if (savedShuffle != playbackManager.isShuffleEnabled.value) {
+                                        playbackManager.toggleShuffle()
+                                    }
+                                    // Apply saved repeat mode
+                                    var attempts = 0
+                                    while (playbackManager.repeatMode.value != savedRepeat && attempts < 3) {
+                                        playbackManager.toggleRepeatMode()
+                                        attempts++
+                                    }
+                                    
+                                    Log.i(TAG, "Successfully restored persisted queue of size ${orderedList.size}, track index $activeIndex at progress $savedPos ms.")
+                                } else {
+                                    fallbackSmartResume(allMediaList)
+                                }
                             } else {
-                                allMediaList.filter { !it.isVideo }
+                                fallbackSmartResume(allMediaList)
                             }
-                            val listToLoad = if (rawCategoryList.any { it.path == lastItem.path }) rawCategoryList else listOf(lastItem)
-                            val indexToResume = listToLoad.indexOfFirst { it.path == lastItem.path }.coerceAtLeast(0)
-                            
-                            playbackManager.setQueue(listToLoad, indexToResume)
-                            if (targetPosition > 0L) {
-                                playbackManager.seekTo(targetPosition)
-                            }
-                            playbackManager.play()
+                        } else {
+                            fallbackSmartResume(allMediaList)
                         }
+                    } else if (smartResumeEnabled.value) {
+                        fallbackSmartResume(allMediaList)
                     }
                 }
             }
+        }
+    }
+
+    private fun fallbackSmartResume(allMediaList: List<MediaEntity>) {
+        val lastItem = allMediaList.filter { it.recentlyPlayed > 0 }
+            .maxByOrNull { it.recentlyPlayed }
+        if (lastItem != null) {
+            val targetPosition = lastItem.lastPlayedPosition
+            Log.i(TAG, "Smart Resume Fallback: Restoring last active item ${lastItem.title} at $targetPosition ms.")
+            
+            val isVideo = lastItem.isVideo
+            val rawCategoryList = if (isVideo) {
+                allMediaList.filter { it.isVideo }
+            } else {
+                allMediaList.filter { !it.isVideo }
+            }
+            val listToLoad = if (rawCategoryList.any { it.path == lastItem.path }) rawCategoryList else listOf(lastItem)
+            val indexToResume = listToLoad.indexOfFirst { it.path == lastItem.path }.coerceAtLeast(0)
+            
+            playbackManager.setQueue(listToLoad, indexToResume)
+            if (targetPosition > 0L) {
+                playbackManager.seekTo(targetPosition)
+            }
+            playbackManager.play()
         }
     }
 
@@ -311,7 +364,7 @@ class MediaViewModel(
     fun playSongAtIndex(songs: List<MediaEntity>, index: Int) {
         val selectedMedia = songs[index]
         if (selectedMedia.isVideo) {
-            _currentlyPlayingVideo.value = selectedMedia
+            setCurrentlyPlayingVideo(selectedMedia)
         } else {
             playbackManager.setQueue(songs, index)
             recordPlaybackEvent(selectedMedia.path)
@@ -320,7 +373,7 @@ class MediaViewModel(
 
     fun playMediaDirectly(media: MediaEntity) {
         if (media.isVideo) {
-            _currentlyPlayingVideo.value = media
+            setCurrentlyPlayingVideo(media)
         } else {
             playbackManager.setQueue(listOf(media), 0)
             playbackManager.play()
@@ -414,6 +467,7 @@ class MediaViewModel(
     // Equalizer controls
     fun toggleEqualizer(enabled: Boolean) = playbackManager.toggleEqualizer(enabled)
     fun setEqualizerBand(band: Int, level: Int) = playbackManager.setEqualizerBand(band, level)
+    fun setEqualizerPreset(levels: List<Int>) = playbackManager.setEqualizerPreset(levels)
     fun setBassBoost(level: Int) = playbackManager.setBassBoost(level)
     fun setVirtualizer(level: Int) = playbackManager.setVirtualizer(level)
     fun setLoudnessEnhancer(gain: Int) = playbackManager.setLoudnessEnhancer(gain)
