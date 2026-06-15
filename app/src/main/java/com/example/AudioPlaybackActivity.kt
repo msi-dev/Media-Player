@@ -130,4 +130,8 @@ class AudioPlaybackActivity : ComponentActivity() {
             viewModel.playMediaDirectly(media)
         }
     }
+
+    override fun getAttributionTag(): String? {
+        return "default"
+    }
 }

@@ -198,4 +198,8 @@ class MediaPlaybackService : MediaSessionService() {
         }
         super.onDestroy()
     }
+
+    override fun getAttributionTag(): String? {
+        return "default"
+    }
 }

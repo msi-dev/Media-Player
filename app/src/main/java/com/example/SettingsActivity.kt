@@ -71,6 +71,10 @@ class SettingsActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun getAttributionTag(): String? {
+        return "default"
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -125,4 +125,33 @@ class MainActivity : ComponentActivity() {
             Log.e(TAG, "Error handling incoming intent: ${e.message}")
         }
     }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_SPACE -> {
+                if (viewModel.isPlaying.value) {
+                    viewModel.pause()
+                } else {
+                    viewModel.play()
+                }
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                val target = (viewModel.currentPosition.value - 5000L).coerceAtLeast(0L)
+                viewModel.seekTo(target)
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                val durationVal = viewModel.duration.value
+                val target = (viewModel.currentPosition.value + 5000L).coerceAtMost(if (durationVal > 0) durationVal else 1000000L)
+                viewModel.seekTo(target)
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun getAttributionTag(): String? {
+        return "default"
+    }
 }

@@ -46,4 +46,8 @@ class MediaPlayerApp : Application() {
         super.onTerminate()
         playbackManager.release()
     }
+
+    override fun getAttributionTag(): String? {
+        return "default"
+    }
 }

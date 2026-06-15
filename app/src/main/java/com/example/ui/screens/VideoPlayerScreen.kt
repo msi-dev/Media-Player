@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -102,6 +103,7 @@ fun VideoPlayerScreen(
     val playbackSpeed by viewModel.videoPlaybackSpeed.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val gestureSensitivity by viewModel.gestureSensitivity.collectAsState()
+    val gestureControlsEnabled by viewModel.gestureControlsEnabled.collectAsState()
     val localVideos by viewModel.allVideos.collectAsState()
 
     // Central overlay Toast HUD
@@ -213,8 +215,58 @@ fun VideoPlayerScreen(
         val latestIsLocked by rememberUpdatedState(isLocked)
         val latestControlsVisible by rememberUpdatedState(isControlsVisible)
         val latestSensitivity by rememberUpdatedState(gestureSensitivity)
+        val latestGestureControlsEnabled by rememberUpdatedState(gestureControlsEnabled)
         val latestVolume by rememberUpdatedState(currentVolume)
         val latestBrightness by rememberUpdatedState(currentBrightness)
+
+        // Custom hooks for touch gesture events
+        val onSwipeToSeek = remember {
+            { dest: Long ->
+                player.seekTo(dest)
+                trackProgressPos = dest
+            }
+        }
+
+        val onDoubleTapToSkip = remember {
+            { isForward: Boolean ->
+                val duration = player.duration.coerceAtLeast(0L)
+                if (isForward) {
+                    val target = (player.currentPosition + 10000L).coerceAtMost(duration)
+                    player.seekTo(target)
+                    showHUD("+10 seconds", Icons.Filled.Forward10)
+                } else {
+                    val target = (player.currentPosition - 10000L).coerceAtLeast(0L)
+                    player.seekTo(target)
+                    showHUD("-10 seconds", Icons.Filled.Replay)
+                }
+            }
+        }
+
+        val onPinchToAdjustVolume = remember {
+            { isIncrease: Boolean, zoomAmount: Float ->
+                val delta = (if (isIncrease) 1f else -1f) * zoomAmount * 4f * latestSensitivity
+                var v = latestVolume + delta
+                v = v.coerceIn(0f, maxVolume)
+                currentVolume = v
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, v.roundToInt(), 0)
+                showHUD("Pinch Volume: ${((v / maxVolume) * 100).roundToInt()}%", Icons.Filled.VolumeUp)
+            }
+        }
+
+        val onPinchToAdjustBrightness = remember {
+            { isIncrease: Boolean, zoomAmount: Float ->
+                val delta = (if (isIncrease) 1f else -1f) * zoomAmount * 0.4f * latestSensitivity
+                var b = latestBrightness + delta
+                b = b.coerceIn(0.01f, 1f)
+                currentBrightness = b
+                activity?.let { act ->
+                    val winAttr = act.window.attributes
+                    winAttr.screenBrightness = b
+                    act.window.attributes = winAttr
+                }
+                showHUD("Pinch Brightness: ${(b * 100).roundToInt()}%", Icons.Filled.LightMode)
+            }
+        }
 
         // Android exoplayer rendering canvas
         val videoCanvas = @Composable {
@@ -285,32 +337,38 @@ fun VideoPlayerScreen(
                             detectTapGestures(
                                 onTap = { isControlsVisible = !latestControlsVisible },
                                 onDoubleTap = { offset ->
-                                    if (latestIsLocked) return@detectTapGestures
+                                    if (latestIsLocked || !latestGestureControlsEnabled) return@detectTapGestures
                                     val isLeft = offset.x < size.width / 2f
-                                    val duration = player.duration.coerceAtLeast(0L)
-                                    if (isLeft) {
-                                        val target = (player.currentPosition - 10000L).coerceAtLeast(0L)
-                                        player.seekTo(target)
-                                        showHUD("-10 seconds", Icons.Filled.Replay)
-                                    } else {
-                                        val target = (player.currentPosition + 10000L).coerceAtMost(duration)
-                                        player.seekTo(target)
-                                        showHUD("+10 seconds", Icons.Filled.Forward10)
-                                    }
+                                    onDoubleTapToSkip(!isLeft)
                                 }
                             )
+                        }
+                        .pointerInput(Unit) {
+                            detectTransformGestures { centroid, pan, zoom, rotation ->
+                                if (latestIsLocked || !latestGestureControlsEnabled) return@detectTransformGestures
+                                if (zoom != 1f) {
+                                    val isLeftSide = centroid.x < size.width / 2f
+                                    val isIncrease = zoom > 1f
+                                    val ratio = abs(zoom - 1f)
+                                    if (isLeftSide) {
+                                        onPinchToAdjustBrightness(isIncrease, ratio)
+                                    } else {
+                                        onPinchToAdjustVolume(isIncrease, ratio)
+                                    }
+                                }
+                            }
                         }
                         .pointerInput(Unit) {
                             var swipeDir: String? = null
                             var isLeftSide = false
                             detectDragGestures(
                                 onDragStart = { offset ->
-                                    if (latestIsLocked) return@detectDragGestures
+                                    if (latestIsLocked || !latestGestureControlsEnabled) return@detectDragGestures
                                     swipeDir = null
                                     isLeftSide = offset.x < size.width / 2f
                                 },
                                 onDrag = { change, dragAmount ->
-                                    if (latestIsLocked) return@detectDragGestures
+                                    if (latestIsLocked || !latestGestureControlsEnabled) return@detectDragGestures
                                     change.consume()
                                     val dx = dragAmount.x
                                     val dy = dragAmount.y
@@ -324,8 +382,7 @@ fun VideoPlayerScreen(
                                         if (duration > 0) {
                                             val shift = (dx * 160 * latestSensitivity).toLong()
                                             val dest = (player.currentPosition + shift).coerceIn(0L, duration)
-                                            player.seekTo(dest)
-                                            trackProgressPos = dest
+                                            onSwipeToSeek(dest)
                                             val delta = if (shift >= 0) "+${shift/1000}s" else "${shift/1000}s"
                                             showHUD("Scrub: ${formatDuration(dest)} [$delta]", Icons.Filled.History)
                                         }
@@ -674,32 +731,38 @@ fun VideoPlayerScreen(
                         detectTapGestures(
                             onTap = { isControlsVisible = !latestControlsVisible },
                             onDoubleTap = { offset ->
-                                if (latestIsLocked) return@detectTapGestures
+                                if (latestIsLocked || !latestGestureControlsEnabled) return@detectTapGestures
                                 val isLeft = offset.x < size.width / 2f
-                                val duration = player.duration.coerceAtLeast(0L)
-                                if (isLeft) {
-                                    val target = (player.currentPosition - 10000L).coerceAtLeast(0L)
-                                    player.seekTo(target)
-                                    showHUD("-10 seconds", Icons.Filled.Replay)
-                                } else {
-                                    val target = (player.currentPosition + 10000L).coerceAtMost(duration)
-                                    player.seekTo(target)
-                                    showHUD("+10 seconds", Icons.Filled.Forward10)
-                                }
+                                onDoubleTapToSkip(!isLeft)
                             }
                         )
+                    }
+                    .pointerInput(Unit) {
+                        detectTransformGestures { centroid, pan, zoom, rotation ->
+                            if (latestIsLocked || !latestGestureControlsEnabled) return@detectTransformGestures
+                            if (zoom != 1f) {
+                                val isLeftSide = centroid.x < size.width / 2f
+                                val isIncrease = zoom > 1f
+                                val ratio = abs(zoom - 1f)
+                                if (isLeftSide) {
+                                    onPinchToAdjustBrightness(isIncrease, ratio)
+                                } else {
+                                    onPinchToAdjustVolume(isIncrease, ratio)
+                                }
+                            }
+                        }
                     }
                     .pointerInput(Unit) {
                         var swipeDir: String? = null
                         var isLeftSide = false
                         detectDragGestures(
                             onDragStart = { offset ->
-                                if (latestIsLocked) return@detectDragGestures
+                                if (latestIsLocked || !latestGestureControlsEnabled) return@detectDragGestures
                                 swipeDir = null
                                 isLeftSide = offset.x < size.width / 2f
                             },
                             onDrag = { change, dragAmount ->
-                                if (latestIsLocked) return@detectDragGestures
+                                if (latestIsLocked || !latestGestureControlsEnabled) return@detectDragGestures
                                 change.consume()
                                 val dx = dragAmount.x
                                 val dy = dragAmount.y
@@ -713,8 +776,7 @@ fun VideoPlayerScreen(
                                     if (duration > 0) {
                                         val shift = (dx * 180 * latestSensitivity).toLong()
                                         val dest = (player.currentPosition + shift).coerceIn(0L, duration)
-                                        player.seekTo(dest)
-                                        trackProgressPos = dest
+                                        onSwipeToSeek(dest)
                                         val delta = if (shift >= 0) "+${shift/1000}s" else "${shift/1000}s"
                                         showHUD("Scrub: ${formatDuration(dest)} [$delta]", Icons.Filled.History)
                                     }

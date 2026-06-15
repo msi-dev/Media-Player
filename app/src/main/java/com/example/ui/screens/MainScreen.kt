@@ -44,6 +44,11 @@ import com.example.ui.viewmodel.MediaViewModel
 import kotlinx.coroutines.launch
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
+import android.annotation.SuppressLint
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -370,17 +375,22 @@ fun MiniPlayerCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(108.dp)
             .clickable(onClick = onClick)
             .border(
                 BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)),
-                shape = RoundedCornerShape(32.dp)
+                shape = RoundedCornerShape(24.dp)
             ),
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 8.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -421,7 +431,7 @@ fun MiniPlayerCard(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(1.dp)
                 ) {
                     IconButton(onClick = { viewModel.toggleShuffle() }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle", tint = if (isShuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
@@ -439,6 +449,14 @@ fun MiniPlayerCard(
                             modifier = Modifier.size(32.dp)
                         )
                     }
+                    IconButton(onClick = { viewModel.stop() }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = "Stop",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                     IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                     }
@@ -453,17 +471,46 @@ fun MiniPlayerCard(
                 }
             }
 
-            // Quick micro progress seek tracker
-            val percentage = if (totalTime > 0) progress.toFloat() / totalTime else 0f
-            LinearProgressIndicator(
-                progress = percentage,
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+            // Interactive Progress Transport Bar
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(2.5.dp)
-                    .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
-            )
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = formatDuration(progress),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Slider(
+                    value = if (totalTime > 0) progress.toFloat() / totalTime else 0f,
+                    onValueChange = { ratio ->
+                        if (totalTime > 0) {
+                            val dest = (ratio * totalTime).toLong()
+                            viewModel.seekTo(dest)
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(24.dp)
+                        .padding(horizontal = 4.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                    )
+                )
+
+                Text(
+                    text = formatDuration(totalTime),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -1219,6 +1266,7 @@ fun EqualizerOverlayBottomSheet(
     val eqActive by viewModel.eqEnabled.collectAsState()
     val bands by viewModel.eqBands.collectAsState()
     val frequencies = listOf("60Hz", "230Hz", "910Hz", "4kHz", "14kHz")
+    var useWebEqualizer by remember { mutableStateOf(false) }
     
     val presets = listOf(
         "Flat" to listOf(0, 0, 0, 0, 0),
@@ -1277,79 +1325,110 @@ fun EqualizerOverlayBottomSheet(
             }
 
             if (eqActive) {
-                // Preset horizontal scrolling chips!
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Presets",
-                        color = Color.Gray,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-                    
-                    androidx.compose.foundation.lazy.LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
+                // Mode switcher row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = { useWebEqualizer = false },
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = if (!useWebEqualizer) DarkPrimary.copy(alpha = 0.2f) else Color.Transparent,
+                            contentColor = if (!useWebEqualizer) DarkPrimary else Color.Gray
+                        ),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        items(presets.size) { index ->
-                            val preset = presets[index]
-                            val isSelected = bands == preset.second
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        color = if (isSelected) DarkPrimary else Color(0xFF262626),
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
-                                    .clickable {
-                                        viewModel.setEqualizerPreset(preset.second)
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
-                            ) {
-                                Text(
-                                    text = preset.first,
-                                    color = if (isSelected) Color.Black else Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                        Text("Hardware EQ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    TextButton(
+                        onClick = { useWebEqualizer = true },
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = if (useWebEqualizer) DarkPrimary.copy(alpha = 0.2f) else Color.Transparent,
+                            contentColor = if (useWebEqualizer) DarkPrimary else Color.Gray
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Web Audio API EQ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
 
-                // Vertical Sliders Deck!
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    bands.forEachIndexed { idx, value ->
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                if (useWebEqualizer) {
+                    WebAudioEqualizerView(viewModel = viewModel)
+                } else {
+                    // Preset horizontal scrolling chips!
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Presets",
+                            color = Color.Gray,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = "${if (value >= 0) "+" else ""}${value} dB",
-                                color = if (value != 0) DarkPrimary else Color.Gray,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            
-                            AospVerticalSlider(
-                                value = value.toFloat(),
-                                onValueChange = { newVal ->
-                                    viewModel.setEqualizerBand(idx, newVal.toInt())
-                                },
-                                valueRange = -15f..15f
-                            )
-                            
-                            Text(
-                                text = frequencies.getOrElse(idx) { "" },
-                                color = Color.LightGray,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            items(presets.size) { index ->
+                                val preset = presets[index]
+                                val isSelected = bands == preset.second
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = if (isSelected) DarkPrimary else Color(0xFF262626),
+                                            shape = RoundedCornerShape(16.dp)
+                                        )
+                                        .clickable {
+                                            viewModel.setEqualizerPreset(preset.second)
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = preset.first,
+                                        color = if (isSelected) Color.Black else Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Vertical Sliders Deck!
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        bands.forEachIndexed { idx, value ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "${if (value >= 0) "+" else ""}${value} dB",
+                                    color = if (value != 0) DarkPrimary else Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                
+                                AospVerticalSlider(
+                                    value = value.toFloat(),
+                                    onValueChange = { newVal ->
+                                        viewModel.setEqualizerBand(idx, newVal.toInt())
+                                    },
+                                    valueRange = -15f..15f
+                                )
+                                
+                                Text(
+                                    text = frequencies.getOrElse(idx) { "" },
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -1390,5 +1469,61 @@ fun EqualizerOverlayBottomSheet(
             
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun WebAudioEqualizerView(viewModel: MediaViewModel, modifier: Modifier = Modifier) {
+    val bands by viewModel.eqBands.collectAsState()
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // Sync from native to Web View faders
+    LaunchedEffect(bands) {
+        webViewRef?.let { webView ->
+            bands.forEachIndexed { band, value ->
+                webView.post {
+                     webView.evaluateJavascript("javascript:setWebEqualizerBand($band, $value)", null)
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(380.dp)
+            .background(Color(0xFF111111), shape = RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0xFF222222), shape = RoundedCornerShape(12.dp))
+            .padding(4.dp)
+    ) {
+        AndroidView(
+            factory = { context ->
+                WebView(context).apply {
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        mediaPlaybackRequiresUserGesture = false
+                    }
+                    webViewClient = WebViewClient()
+                    
+                    // Add JavaScript Bridge for Web->Native sync
+                    addJavascriptInterface(object {
+                        @JavascriptInterface
+                        fun setNativeEqualizerBand(bandIndex: Int, value: Float) {
+                            // Sync Web slider value to central native viewModel instance
+                            viewModel.setEqualizerBand(bandIndex, value.toInt())
+                        }
+                    }, "AndroidBridge")
+                    
+                    loadUrl("file:///android_asset/web_audio_equalizer.html")
+                    webViewRef = this
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = { webView ->
+                webViewRef = webView
+            }
+        )
     }
 }

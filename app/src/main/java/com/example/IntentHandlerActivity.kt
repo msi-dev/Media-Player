@@ -53,4 +53,8 @@ class IntentHandlerActivity : ComponentActivity() {
         }
         finish()
     }
+
+    override fun getAttributionTag(): String? {
+        return "default"
+    }
 }
