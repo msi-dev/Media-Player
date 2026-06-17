@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
 import com.example.ui.theme.DarkPrimary
 
 @Composable
@@ -27,6 +28,9 @@ fun CustomAospSeekBar(
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
     val displayProgress = if (isDragging) dragProgress else progress
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryCopy25 = primaryColor.copy(alpha = 0.25f)
+    val primaryCopy35 = primaryColor.copy(alpha = 0.35f)
 
     BoxWithConstraints(
         modifier = modifier
@@ -76,9 +80,9 @@ fun CustomAospSeekBar(
             val canvasWidth = size.width
             val canvasHeight = size.height
 
-            // 1. Draw Background Track (sleek thin gray pill)
+            // 1. Draw Background Track (sleek thin gray pill highlighted with primary tint)
             drawRoundRect(
-                color = Color.White.copy(alpha = 0.2f),
+                color = primaryCopy25,
                 topLeft = Offset(0f, (canvasHeight - trackHeight) / 2),
                 size = Size(canvasWidth, trackHeight),
                 cornerRadius = CornerRadius(trackHeight / 2, trackHeight / 2)
@@ -88,7 +92,7 @@ fun CustomAospSeekBar(
             val activeWidth = canvasWidth * displayProgress
             if (activeWidth > 0) {
                 drawRoundRect(
-                    color = DarkPrimary,
+                    color = primaryColor,
                     topLeft = Offset(0f, (canvasHeight - trackHeight) / 2),
                     size = Size(activeWidth, trackHeight),
                     cornerRadius = CornerRadius(trackHeight / 2, trackHeight / 2)
@@ -101,7 +105,7 @@ fun CustomAospSeekBar(
 
             if (isDragging) {
                 drawCircle(
-                    color = DarkPrimary.copy(alpha = 0.35f),
+                    color = primaryCopy35,
                     radius = thumbRadius + 8.dp.toPx(),
                     center = Offset(thumbX, centerY)
                 )

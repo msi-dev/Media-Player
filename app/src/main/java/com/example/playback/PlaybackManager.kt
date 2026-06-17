@@ -281,7 +281,7 @@ class PlaybackManager(private val context: Context) {
     }
 
     // Custom Queue Operations
-    fun setQueue(songs: List<MediaEntity>, startPosition: Int = 0) {
+    fun setQueue(songs: List<MediaEntity>, startPosition: Int = 0, playWhenReady: Boolean = true) {
         if (songs.isEmpty()) return
         
         _playbackQueue.value = songs
@@ -306,8 +306,14 @@ class PlaybackManager(private val context: Context) {
         val savedPosition = targetSong.lastPlayedPosition
         player.addMediaItems(mediaItems)
         player.seekTo(startPosition, savedPosition)
-        player.prepare()
-        play()
+        
+        if (playWhenReady) {
+            player.prepare()
+            play()
+        } else {
+            player.prepare()
+            player.playWhenReady = false
+        }
         
         _currentSong.value = songs[startPosition]
         _duration.value = player.duration.coerceAtLeast(0L)

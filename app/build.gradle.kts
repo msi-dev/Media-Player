@@ -14,14 +14,14 @@ android {
     applicationId = "com.msi.mediaplayer"
     minSdk = 24
     targetSdk = 36
-    versionCode = 9
-    versionName = "6.4"
+    versionCode = 10
+    versionName = "6.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   // Ensure Sirajul - msi-dev custom secure signing key is dynamically baked if absent
-  val sirajulKeystoreFile = file("${rootDir}/sirajul.jks")
+  val sirajulKeystoreFile = file("${rootDir}/sirajul.p12")
 
   signingConfigs {
     create("sirajulConfig") {
@@ -29,6 +29,7 @@ android {
       storePassword = "sirajulpassword"
       keyAlias = "Sirajul"
       keyPassword = "sirajulpassword"
+      storeType = "PKCS12"
       enableV1Signing = true
       enableV2Signing = true
       enableV3Signing = true
@@ -39,12 +40,13 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("sirajulConfig")
     }
     debug {
-      signingConfig = signingConfigs.getByName("sirajulConfig")
+      signingConfig = signingConfigs.getByName("debug")
     }
   }
   compileOptions {
@@ -89,6 +91,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation(libs.androidx.navigation.compose)
+  implementation(libs.androidx.recyclerview)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
@@ -126,7 +129,7 @@ dependencies {
 }
 
 val generateSirajulKeystore = tasks.register("generateSirajulKeystore") {
-  val keystoreFile = file("${rootDir}/sirajul.jks")
+  val keystoreFile = file("${rootDir}/sirajul.p12")
   outputs.file(keystoreFile)
   doLast {
     if (!keystoreFile.exists()) {
@@ -135,7 +138,7 @@ val generateSirajulKeystore = tasks.register("generateSirajulKeystore") {
         val exitCode = ProcessBuilder(
           "keytool", "-genkeypair", "-v",
           "-keystore", keystoreFile.absolutePath,
-          "-storetype", "JKS",
+          "-storetype", "PKCS12",
           "-keyalg", "RSA",
           "-keysize", "2048",
           "-validity", "10000",
@@ -163,34 +166,34 @@ tasks.matching {
   dependsOn(generateSirajulKeystore)
 }
 
-// Automatically copy the built debug APK to both .build-outputs and .build_outpu directories
+// Automatically copy the built APKs (debug or release) to output directories
 val copyApkToOutput = tasks.register("copyApkToOutput") {
   val projectDirectory = layout.projectDirectory
-  val apkFileProp = projectDirectory.file("build/outputs/apk/debug/app-debug.apk")
-  val targetDir1Prop = projectDirectory.dir("../.build-outputs")
-  val targetDir2Prop = projectDirectory.dir("../.build_outpu")
-
-  inputs.file(apkFileProp).optional()
-  outputs.dirs(targetDir1Prop, targetDir2Prop)
+  val debugApkFile = projectDirectory.file("build/outputs/apk/debug/app-debug.apk").asFile
+  val releaseApkFile = projectDirectory.file("build/outputs/apk/release/app-release.apk").asFile
+  val targetDir1 = projectDirectory.dir("../.build-outputs").asFile
+  val targetDir2 = projectDirectory.dir("../.build_outpu").asFile
 
   doLast {
-    val apkFile = apkFileProp.asFile
-    if (apkFile.exists()) {
-      val targetDir1 = targetDir1Prop.asFile
-      val targetDir2 = targetDir2Prop.asFile
-      targetDir1.mkdirs()
-      targetDir2.mkdirs()
-      
-      apkFile.copyTo(File(targetDir1, "app-debug.apk"), overwrite = true)
-      apkFile.copyTo(File(targetDir2, "app-debug.apk"), overwrite = true)
-      apkFile.copyTo(File(targetDir2, "app.apk"), overwrite = true)
-      println("Successfully copied APK to build output storage.")
-    } else {
-      println("Gradle Build Info: app-debug.apk not found.")
+    targetDir1.mkdirs()
+    targetDir2.mkdirs()
+
+    if (debugApkFile.exists()) {
+      debugApkFile.copyTo(File(targetDir1, "app-debug.apk"), overwrite = true)
+      debugApkFile.copyTo(File(targetDir2, "app-debug.apk"), overwrite = true)
+      debugApkFile.copyTo(File(targetDir2, "app.apk"), overwrite = true)
+      println("Successfully copied Debug APK to build output storage.")
+    }
+
+    if (releaseApkFile.exists()) {
+      releaseApkFile.copyTo(File(targetDir1, "app-release.apk"), overwrite = true)
+      releaseApkFile.copyTo(File(targetDir2, "app-release.apk"), overwrite = true)
+      releaseApkFile.copyTo(File(projectDirectory.asFile, "app-release.apk"), overwrite = true)
+      println("Successfully copied Release APK to project directory and build outputs.")
     }
   }
 }
 
-tasks.matching { it.name == "assembleDebug" }.configureEach {
+tasks.matching { it.name == "assembleDebug" || it.name == "assembleRelease" }.configureEach {
   finalizedBy(copyApkToOutput)
 }

@@ -22,6 +22,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.rotate
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -146,3 +151,89 @@ fun AlbumArtImage(
         }
     }
 }
+
+@Composable
+fun CdStyleAlbumArt(
+    songPath: String,
+    songTitle: String,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var rotationAngle by remember { mutableFloatStateOf(0f) }
+
+    // Smoothly accumulate rotation when playing
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            var lastTime = System.currentTimeMillis()
+            while (true) {
+                val now = System.currentTimeMillis()
+                val delta = now - lastTime
+                lastTime = now
+                // Smooth rotation update based on frame delta
+                rotationAngle = (rotationAngle + (0.045f * delta)) % 360f
+                delay(16)
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(CircleShape)
+            .background(Color(0xFF0F1012))
+            .border(4.dp, Color.Black.copy(alpha = 0.8f), CircleShape)
+            .border(5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        // Rotatable Vinyl/CD Content Group
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .rotate(rotationAngle),
+            contentAlignment = Alignment.Center
+        ) {
+            // Main Album Image cropped as circle
+            AlbumArtImage(
+                songPath = songPath,
+                songTitle = songTitle,
+                shape = CircleShape,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Glossy Vinyl Ring Grooves (Styling to make it look like a real Vinyl / CD!)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.9f)
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.75f)
+                    .border(1.5.dp, Color.Black.copy(alpha = 0.15f), CircleShape)
+                    .border(2.dp, Color.White.copy(alpha = 0.05f), CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.6f)
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
+            )
+        }
+
+        // Center Cap (Authentic physical vinyl spindle hole!)
+        Box(
+            modifier = Modifier
+                .fillMaxSize(0.28f)
+                .background(Color.Black, CircleShape)
+                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.35f)
+                    .background(Color(0xFF141416), CircleShape)
+                    .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+            )
+        }
+    }
+}
+

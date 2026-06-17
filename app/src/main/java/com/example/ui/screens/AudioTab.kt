@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -34,9 +35,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
 import com.example.data.db.MediaEntity
 import com.example.data.db.PlaylistEntity
 import com.example.ui.components.AlbumArtImage
+import com.example.ui.components.SkeletonListLoader
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.theme.DarkTertiary
@@ -49,6 +52,20 @@ fun AudioTab(
 ) {
     val subTabs by viewModel.visibleTabs.collectAsState()
     var selectedSubTab by remember { mutableIntStateOf(0) }
+    val subHistory = remember { mutableStateListOf(0) }
+
+    val updateSubTab = { index: Int ->
+        if (selectedSubTab != index) {
+            subHistory.add(index)
+            selectedSubTab = index
+        }
+    }
+
+    BackHandler(enabled = subHistory.size > 1) {
+        subHistory.removeAt(subHistory.lastIndex)
+        selectedSubTab = subHistory.last()
+    }
+
     val activeIndex = if (selectedSubTab >= subTabs.size) 0 else selectedSubTab
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 4.dp)) {
@@ -76,7 +93,7 @@ fun AudioTab(
                 subTabs.forEachIndexed { index, title ->
                     Tab(
                         selected = activeIndex == index,
-                        onClick = { selectedSubTab = index },
+                        onClick = { updateSubTab(index) },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
                         unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         text = {
@@ -183,7 +200,13 @@ fun TracksView(viewModel: MediaViewModel) {
                 }
             }
 
-            if (songs.isEmpty()) {
+            val isScanning by viewModel.isScanning.collectAsState()
+
+            if (isScanning && songs.isEmpty()) {
+                Box(modifier = Modifier.weight(1f)) {
+                    SkeletonListLoader()
+                }
+            } else if (songs.isEmpty()) {
                 EmptyBox(message = "No local tracks found. Pull down settings or scan storage.")
             } else {
                 LazyColumn(
@@ -702,7 +725,7 @@ fun SongListItem(
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    modifier = Modifier.basicMarquee()
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(
@@ -714,13 +737,16 @@ fun SongListItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .basicMarquee()
                     )
                     Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 10.sp)
                     Text(
                         text = formatDuration(song.duration),
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        maxLines = 1
                     )
                 }
             }
@@ -832,7 +858,7 @@ fun CollectionCard(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    color = Color.LightGray,
+                    color = if (subtitle.trim().startsWith("0")) MaterialTheme.colorScheme.primary else Color.LightGray,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1472,35 +1498,14 @@ fun RecentListItem(
             }
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = song.title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    
-                    val badgeText = if (song.isVideo) "VIDEO" else "AUDIO"
-                    val badgeColor = if (song.isVideo) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                    Surface(
-                        color = badgeColor.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = badgeText,
-                            color = badgeColor,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = song.title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee()
+                )
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1511,14 +1516,16 @@ fun RecentListItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .basicMarquee()
                     )
                     Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 10.sp)
                     Text(
-                        text = relativeTime,
-                        color = MaterialTheme.colorScheme.primary,
+                        text = formatDuration(song.duration),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        maxLines = 1
                     )
                 }
             }

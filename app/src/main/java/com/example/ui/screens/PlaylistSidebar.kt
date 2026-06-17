@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -167,12 +168,12 @@ fun PlaylistSidebar(
             .fillMaxHeight()
             .width(320.dp)
             .background(
-                color = Color(0xFF121214),
+                color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
             )
             .border(
                 width = 1.dp,
-                color = Color.White.copy(alpha = 0.08f),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                 shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
             )
             .statusBarsPadding()
@@ -197,26 +198,26 @@ fun PlaylistSidebar(
                     Box(
                         modifier = Modifier
                             .size(38.dp)
-                            .background(DarkPrimary.copy(alpha = 0.15f), shape = CircleShape),
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), shape = CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Filled.QueueMusic,
                             contentDescription = null,
-                            tint = DarkPrimary,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                     Column {
                         Text(
                             text = "Deck Playlist",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = "Studio streaming deck",
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     }
@@ -229,7 +230,7 @@ fun PlaylistSidebar(
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "Close Playlist",
-                        tint = Color.LightGray
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -244,7 +245,7 @@ fun PlaylistSidebar(
                 placeholder = {
                     Text(
                         text = "Search file name or media type...",
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         fontSize = 11.sp
                     )
                 },
@@ -252,7 +253,7 @@ fun PlaylistSidebar(
                     Icon(
                         imageVector = Icons.Filled.Search,
                         contentDescription = "Search",
-                        tint = Color.Gray,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
                     )
                 },
@@ -265,22 +266,22 @@ fun PlaylistSidebar(
                             Icon(
                                 imageVector = Icons.Filled.Clear,
                                 contentDescription = "Clear search",
-                                tint = Color.Gray,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(14.dp)
                             )
                         }
                     }
                 },
-                textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 12.sp),
+                textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp),
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = DarkPrimary,
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.08f),
-                    focusedContainerColor = Color(0xFF1E1E22),
-                    unfocusedContainerColor = Color(0xFF1E1E22),
-                    focusedLabelColor = DarkPrimary,
-                    unfocusedLabelColor = Color.Gray
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
 
@@ -288,7 +289,7 @@ fun PlaylistSidebar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1E1E22), shape = RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(24.dp))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -298,7 +299,7 @@ fun PlaylistSidebar(
                         .weight(1f)
                         .height(36.dp)
                         .background(
-                            color = if (sidebarTab == 0) DarkPrimary else Color.Transparent,
+                            color = if (sidebarTab == 0) MaterialTheme.colorScheme.primary else Color.Transparent,
                             shape = RoundedCornerShape(20.dp)
                         )
                         .clickable { sidebarTab = 0 },
@@ -311,12 +312,12 @@ fun PlaylistSidebar(
                         Icon(
                             imageVector = Icons.Filled.Audiotrack,
                             contentDescription = null,
-                            tint = if (sidebarTab == 0) Color.Black else Color.White,
+                            tint = if (sidebarTab == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
                         )
                         Text(
                             text = "Audio",
-                            color = if (sidebarTab == 0) Color.Black else Color.White,
+                            color = if (sidebarTab == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -329,7 +330,7 @@ fun PlaylistSidebar(
                         .weight(1f)
                         .height(36.dp)
                         .background(
-                            color = if (sidebarTab == 1) DarkPrimary else Color.Transparent,
+                            color = if (sidebarTab == 1) MaterialTheme.colorScheme.primary else Color.Transparent,
                             shape = RoundedCornerShape(20.dp)
                         )
                         .clickable { sidebarTab = 1 },
@@ -342,12 +343,12 @@ fun PlaylistSidebar(
                         Icon(
                             imageVector = Icons.Filled.Videocam,
                             contentDescription = null,
-                            tint = if (sidebarTab == 1) Color.Black else Color.White,
+                            tint = if (sidebarTab == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
                         )
                         Text(
                             text = "Video",
-                            color = if (sidebarTab == 1) Color.Black else Color.White,
+                            color = if (sidebarTab == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -622,12 +623,12 @@ fun AudioPlaylistItem(
             .fillMaxWidth()
             .border(
                 width = 1.dp,
-                color = if (isDragged) DarkPrimary else if (isSelected) DarkPrimary.copy(alpha = 0.35f) else Color.Transparent,
+                color = if (isDragged) MaterialTheme.colorScheme.primary else if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else Color.Transparent,
                 shape = RoundedCornerShape(12.dp)
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDragged) Color(0xFF26262B) else if (isSelected) DarkPrimary.copy(alpha = 0.08f) else Color(0xFF1E1E22).copy(alpha = 0.5f)
+            containerColor = if (isDragged) MaterialTheme.colorScheme.surfaceVariant else if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
         Row(
@@ -641,7 +642,7 @@ fun AudioPlaylistItem(
             Icon(
                 imageVector = Icons.Filled.DragHandle,
                 contentDescription = "Tap status, Drag to reorder",
-                tint = if (isDragged) DarkPrimary else Color.Gray.copy(alpha = 0.5f),
+                tint = if (isDragged) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier
                     .size(36.dp)
                     .padding(6.dp)
@@ -682,7 +683,7 @@ fun AudioPlaylistItem(
                                 .background(Color.Black.copy(alpha = 0.4f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            EqualizerWaveform(isPlaying = isPlaying)
+                            EqualizerWaveform(isPlaying = isPlaying, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -695,34 +696,38 @@ fun AudioPlaylistItem(
                     ) {
                         Text(
                             text = song.title,
-                            color = if (isSelected) DarkPrimary else Color.White,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .basicMarquee()
                         )
                         Text(
                             text = "(${formatDuration(song.duration)})",
-                            color = if (isSelected) DarkPrimary.copy(alpha = 0.7f) else Color.Gray,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
                         )
                         if (isSelected) {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Filled.VolumeUp else Icons.Filled.VolumeMute,
                                 contentDescription = null,
-                                tint = DarkPrimary,
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(13.dp)
                             )
                         }
                     }
                     Text(
                         text = song.artist,
-                        color = if (isSelected) DarkPrimary.copy(alpha = 0.7f) else Color.LightGray,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 10.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .basicMarquee()
                     )
                 }
             }
@@ -736,17 +741,18 @@ fun AudioPlaylistItem(
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                         contentDescription = "Play/Pause toggle",
-                        tint = DarkPrimary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
             } else {
                 Text(
                     text = formatDuration(song.duration),
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(end = 4.dp)
+                    modifier = Modifier.padding(end = 4.dp),
+                    maxLines = 1
                 )
             }
         }
@@ -771,12 +777,12 @@ fun VideoPlaylistItem(
             .fillMaxWidth()
             .border(
                 width = 1.dp,
-                color = if (isDragged) DarkPrimary else if (isSelected) DarkPrimary.copy(alpha = 0.35f) else Color.Transparent,
+                color = if (isDragged) MaterialTheme.colorScheme.primary else if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else Color.Transparent,
                 shape = RoundedCornerShape(12.dp)
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDragged) Color(0xFF26262B) else if (isSelected) DarkPrimary.copy(alpha = 0.08f) else Color(0xFF1E1E22).copy(alpha = 0.5f)
+            containerColor = if (isDragged) MaterialTheme.colorScheme.surfaceVariant else if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
         Row(
@@ -790,7 +796,7 @@ fun VideoPlaylistItem(
             Icon(
                 imageVector = Icons.Filled.DragHandle,
                 contentDescription = "Drag to reorder",
-                tint = if (isDragged) DarkPrimary else Color.Gray.copy(alpha = 0.5f),
+                tint = if (isDragged) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier
                     .size(36.dp)
                     .padding(6.dp)
@@ -849,13 +855,13 @@ fun VideoPlaylistItem(
                         modifier = Modifier
                             .size(20.dp)
                             .background(
-                                color = if (isSelected) DarkPrimary.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.5f),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.5f),
                                 shape = CircleShape
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         if (isSelected) {
-                            EqualizerWaveform(isPlaying = true, color = Color.Black)
+                            EqualizerWaveform(isPlaying = true, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
                         } else {
                             Icon(
                                 imageVector = Icons.Filled.PlayArrow,
@@ -875,33 +881,36 @@ fun VideoPlaylistItem(
                     ) {
                         Text(
                             text = video.title,
-                            color = if (isSelected) DarkPrimary else Color.White,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .basicMarquee()
                         )
                         Text(
                             text = "(${formatDuration(video.duration)})",
-                            color = if (isSelected) DarkPrimary.copy(alpha = 0.7f) else Color.Gray,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
                         )
                         if (isSelected) {
                             Icon(
                                 imageVector = Icons.Filled.VolumeUp,
                                 contentDescription = null,
-                                tint = DarkPrimary,
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(13.dp)
                             )
                         }
                     }
                     Text(
                         text = formatDuration(video.duration),
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
                     )
                 }
             }

@@ -4,15 +4,17 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.DarkPrimary
 
 @Composable
 fun AospVerticalSlider(
@@ -26,10 +28,25 @@ fun AospVerticalSlider(
     val rangeEnd = valueRange.endInclusive
     val rangeSpan = rangeEnd - rangeStart
 
+    val view = LocalView.current
+    val trackBgColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+    val activeTrackColor = MaterialTheme.colorScheme.primary
+    val thumbColor = MaterialTheme.colorScheme.primary
+
     BoxWithConstraints(
         modifier = modifier
             .width(52.dp)
             .height(180.dp)
+            .pointerInput(view) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.any { it.pressed }) {
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                        }
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 fun updateValue(y: Float) {
                     val heightPx = size.height.toFloat()
@@ -70,7 +87,7 @@ fun AospVerticalSlider(
             
             // Draw background vertical track (thick pill)
             drawRoundRect(
-                color = Color.White.copy(alpha = 0.15f),
+                color = trackBgColor,
                 topLeft = Offset((canvasWidth - trackWidth) / 2, 0f),
                 size = Size(trackWidth, canvasHeight),
                 cornerRadius = CornerRadius(trackWidth / 2, trackWidth / 2)
@@ -82,7 +99,7 @@ fun AospVerticalSlider(
             val activeTop = canvasHeight - activeHeight
             if (activeHeight > 0f) {
                 drawRoundRect(
-                    color = DarkPrimary,
+                    color = activeTrackColor,
                     topLeft = Offset((canvasWidth - trackWidth) / 2, activeTop),
                     size = Size(trackWidth, activeHeight),
                     cornerRadius = CornerRadius(trackWidth / 2, trackWidth / 2)
@@ -95,7 +112,7 @@ fun AospVerticalSlider(
             val thumbY = activeTop
             
             drawRoundRect(
-                color = Color.White,
+                color = thumbColor,
                 topLeft = Offset((canvasWidth - thumbWidth) / 2, thumbY - thumbHeight / 2),
                 size = Size(thumbWidth, thumbHeight),
                 cornerRadius = CornerRadius(thumbHeight / 2, thumbHeight / 2)

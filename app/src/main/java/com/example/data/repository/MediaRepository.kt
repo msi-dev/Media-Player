@@ -146,18 +146,6 @@ class MediaRepository(
                         var genre = "Unknown Genre"
                         var year = "Unknown Year"
 
-                        try {
-                            val meta = com.example.data.util.MetadataParser.extractMetadata(context, path)
-                            meta.title?.let { if (it.isNotBlank()) title = it }
-                            meta.artist?.let { if (it.isNotBlank()) artist = it }
-                            meta.album?.let { if (it.isNotBlank()) album = it }
-                            meta.genre?.let { if (it.isNotBlank()) genre = it }
-                            meta.year?.let { if (it.isNotBlank()) year = it }
-                            meta.duration?.let { if (it > 0) duration = it }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error extracting metadata for $path: ${e.message}")
-                        }
-
                         foundMedia.add(
                             MediaEntity(
                                 path = path,
@@ -209,25 +197,13 @@ class MediaRepository(
                     val format = NativeMediaBridge.detectFormat(path)
 
                     if (NativeMediaBridge.isFormatSupported(format)) {
-                        var title = cursor.getString(titleIndex) ?: java.io.File(path).nameWithoutExtension
-                        var duration = cursor.getLong(durationIndex)
+                        val title = cursor.getString(titleIndex) ?: java.io.File(path).nameWithoutExtension
+                        val duration = cursor.getLong(durationIndex)
                         val size = cursor.getLong(sizeIndex)
-                        var album = "Video Folder"
-                        var artist = "Video Provider"
-                        var genre = "Video Genre"
-                        var year = "Unknown Year"
-
-                        try {
-                            val meta = com.example.data.util.MetadataParser.extractMetadata(context, path)
-                            meta.title?.let { if (it.isNotBlank()) title = it }
-                            meta.artist?.let { if (it.isNotBlank()) artist = it }
-                            meta.album?.let { if (it.isNotBlank()) album = it }
-                            meta.genre?.let { if (it.isNotBlank()) genre = it }
-                            meta.year?.let { if (it.isNotBlank()) year = it }
-                            meta.duration?.let { if (it > 0) duration = it }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error extracting video metadata for $path: ${e.message}")
-                        }
+                        val album = "Video Folder"
+                        val artist = "Video Provider"
+                        val genre = "Video Genre"
+                        val year = "Unknown Year"
 
                         foundMedia.add(
                             MediaEntity(
@@ -350,4 +326,320 @@ class MediaRepository(
             mediaDao.insertMedia(foundMedia)
         }
     }
+
+    /**
+     * Unified folder scanning: Queries local MediaStore for folders with audio/video media.
+     */
+    suspend fun queryMediaFolders(): List<MediaFolder> = withContext(Dispatchers.IO) {
+        val foldersMap = mutableMapOf<String, Triple<String, Int, Pair<Boolean, Boolean>>>()
+        
+        // Scan Audio directories
+        val audioProjection = arrayOf(MediaStore.Audio.Media.DATA)
+        try {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                audioProjection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                if (dataCol != -1) {
+                    while (cursor.moveToNext()) {
+                        val filePath = cursor.getString(dataCol) ?: continue
+                        val parentFile = java.io.File(filePath).parentFile ?: continue
+                        val parentPath = parentFile.absolutePath
+                        val info = foldersMap[parentPath]
+                        if (info != null) {
+                            foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(true, info.third.second))
+                        } else {
+                            foldersMap[parentPath] = Triple(parentFile.name, 1, Pair(true, false))
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error querying MediaStore folders for audio: ${e.message}")
+        }
+
+        // Scan Video directories
+        val videoProjection = arrayOf(MediaStore.Video.Media.DATA)
+        try {
+            context.contentResolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                videoProjection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+                if (dataCol != -1) {
+                    while (cursor.moveToNext()) {
+                        val filePath = cursor.getString(dataCol) ?: continue
+                        val parentFile = java.io.File(filePath).parentFile ?: continue
+                        val parentPath = parentFile.absolutePath
+                        val info = foldersMap[parentPath]
+                        if (info != null) {
+                            foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(info.third.first, true))
+                        } else {
+                            foldersMap[parentPath] = Triple(parentFile.name, 1, Pair(false, true))
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error querying MediaStore folders for video: ${e.message}")
+        }
+
+        // Include any Demo preset folder if physical list is empty
+        if (foldersMap.isEmpty()) {
+            foldersMap["/demo_vault"] = Triple("Demo Vault", 9, Pair(true, true))
+        }
+
+        foldersMap.map { (path, info) ->
+            MediaFolder(
+                path = path,
+                name = info.first,
+                totalItems = info.second,
+                hasAudio = info.third.first,
+                hasVideo = info.third.second
+            )
+        }.sortedBy { it.name.lowercase() }
+    }
+
+    /**
+     * Unified fast item fetcher: Lazily loads and filters files by folder path with limits.
+     */
+    suspend fun getPagedMediaItemsInFolder(
+        folderPath: String,
+        limit: Int,
+        offset: Int
+    ): List<MediaEntity> = withContext(Dispatchers.IO) {
+        val allItems = mutableListOf<MediaEntity>()
+
+        // Fallback for demo folder (to keep system functional even on blank emulator/sandbox)
+        if (folderPath.contains("demo_vault")) {
+            val demoMedia = listOf(
+                MediaEntity(
+                    path = "asset:///songs/synthwave_horizon.mp3",
+                    title = "Synthwave Horizon",
+                    duration = 198000L,
+                    size = 4752000L,
+                    album = "Retro Cosmic Drive",
+                    artist = "Stellar Ranger",
+                    genre = "Synthwave",
+                    isVideo = false
+                ),
+                MediaEntity(
+                    path = "asset:///songs/sunset_highway.flac",
+                    title = "Sunset Highway (Hi-Res flac)",
+                    duration = 245000L,
+                    size = 28500000L,
+                    album = "California Chillout",
+                    artist = "Pulse Vector",
+                    genre = "Chillwave",
+                    isVideo = false
+                ),
+                MediaEntity(
+                    path = "asset:///songs/neon_dreams.aac",
+                    title = "Neon Dreams",
+                    duration = 180000L,
+                    size = 3600000L,
+                    album = "Blade City",
+                    artist = "Luna Helix",
+                    genre = "Electro-Pop",
+                    isVideo = false
+                ),
+                MediaEntity(
+                    path = "asset:///songs/liquid_ambient.wav",
+                    title = "Liquid Ambient (Studio wav)",
+                    duration = 312000L,
+                    size = 53000000L,
+                    album = "Ethereal Echoes",
+                    artist = "Ascension Zero",
+                    genre = "Ambient",
+                    isVideo = false
+                ),
+                MediaEntity(
+                    path = "asset:///songs/acoustic_breeze.opus",
+                    title = "Acoustic Breeze",
+                    duration = 142000L,
+                    size = 2100000L,
+                    album = "Woodland Whispers",
+                    artist = "Finn & The Whispers",
+                    genre = "Folk",
+                    isVideo = false
+                ),
+                MediaEntity(
+                    path = "asset:///songs/cyberpunk_assault.avi",
+                    title = "Cyberpunk Assault",
+                    duration = 210000L,
+                    size = 120000000L,
+                    album = "Industrial Cyber",
+                    artist = "Grid Terminal",
+                    genre = "Industrial",
+                    isVideo = false
+                ),
+                MediaEntity(
+                    path = "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+                    title = "Sintel Cinematic Trailer",
+                    duration = 520000L,
+                    size = 85000000L,
+                    album = "Blender Foundation",
+                    artist = "Creative Video Group",
+                    isVideo = true
+                ),
+                MediaEntity(
+                    path = "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+                    title = "Tears of Steel (VFX Edition)",
+                    duration = 734000L,
+                    size = 140000000L,
+                    album = "CGI Production",
+                    artist = "VFX Collective",
+                    isVideo = true
+                ),
+                MediaEntity(
+                    path = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                    title = "Big Buck Bunny (Animation)",
+                    duration = 596000L,
+                    size = 90000000L,
+                    album = "Blender Animation",
+                    artist = "Orangutan Studios",
+                    isVideo = true
+                )
+            )
+            return@withContext if (offset >= demoMedia.size) {
+                emptyList()
+            } else {
+                val toIndex = (offset + limit).coerceAtMost(demoMedia.size)
+                demoMedia.subList(offset, toIndex)
+            }
+        }
+
+        // Query Audio from target folder
+        val audioProjection = arrayOf(
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ARTIST
+        )
+        try {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                audioProjection,
+                "_data LIKE ?",
+                arrayOf("$folderPath/%"),
+                null
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                val titleCol = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                val durationCol = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                val sizeCol = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                val albumCol = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+                val artistCol = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+
+                if (dataCol != -1 && titleCol != -1) {
+                    while (cursor.moveToNext()) {
+                        val path = cursor.getString(dataCol) ?: continue
+                        val parentFile = java.io.File(path).parentFile ?: continue
+                        if (parentFile.absolutePath == folderPath) {
+                            val title = cursor.getString(titleCol) ?: parentFile.nameIndex()
+                            val duration = if (durationCol != -1) cursor.getLong(durationCol) else 0L
+                            val size = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
+                            val album = if (albumCol != -1) cursor.getString(albumCol) ?: "Unknown Album" else "Unknown Album"
+                            val artist = if (artistCol != -1) cursor.getString(artistCol) ?: "Unknown Artist" else "Unknown Artist"
+
+                            allItems.add(
+                                MediaEntity(
+                                    path = path,
+                                    title = title,
+                                    duration = duration,
+                                    size = size,
+                                    album = album,
+                                    artist = artist,
+                                    isVideo = false
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching audios in folder: ${e.message}")
+        }
+
+        // Query Video from target folder
+        val videoProjection = arrayOf(
+            MediaStore.Video.Media.DATA,
+            MediaStore.Video.Media.TITLE,
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.SIZE
+        )
+        try {
+            context.contentResolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                videoProjection,
+                "_data LIKE ?",
+                arrayOf("$folderPath/%"),
+                null
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+                val titleCol = cursor.getColumnIndex(MediaStore.Video.Media.TITLE)
+                val durationCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
+                val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
+
+                if (dataCol != -1 && titleCol != -1) {
+                    while (cursor.moveToNext()) {
+                        val path = cursor.getString(dataCol) ?: continue
+                        val parentFile = java.io.File(path).parentFile ?: continue
+                        if (parentFile.absolutePath == folderPath) {
+                            val title = cursor.getString(titleCol) ?: parentFile.name
+                            val duration = if (durationCol != -1) cursor.getLong(durationCol) else 0L
+                            val size = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
+
+                            allItems.add(
+                                MediaEntity(
+                                    path = path,
+                                    title = title,
+                                    duration = duration,
+                                    size = size,
+                                    album = "Video Folder",
+                                    artist = "Video Provider",
+                                    isVideo = true
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching videos in folder: ${e.message}")
+        }
+
+        // Sort naturally
+        allItems.sortBy { it.title.lowercase() }
+
+        // Chunked offset slice slicing
+        if (offset >= allItems.size) {
+            emptyList()
+        } else {
+            val toIndex = (offset + limit).coerceAtMost(allItems.size)
+            allItems.subList(offset, toIndex)
+        }
+    }
 }
+
+private fun java.io.File.nameIndex(): String {
+    return nameWithoutExtension
+}
+
+data class MediaFolder(
+    val path: String,
+    val name: String,
+    val totalItems: Int,
+    val hasAudio: Boolean,
+    val hasVideo: Boolean
+)
+

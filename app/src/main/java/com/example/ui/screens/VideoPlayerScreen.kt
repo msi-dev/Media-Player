@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.app.AppOpsManager
+import android.os.Process
+import android.provider.Settings
+import android.net.Uri
+import androidx.activity.compose.BackHandler
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
@@ -15,6 +20,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -71,8 +81,30 @@ fun VideoPlayerScreen(
     val activity = remember { context as? Activity }
     val coroutineScope = rememberCoroutineScope()
 
-    // Retrieve global exoplayer instance from the playback manager
-    val player = remember { (context.applicationContext as com.example.MediaPlayerApp).playbackManager.player }
+    // Create an independent, separate ExoPlayer instance specifically for video playback
+    val player = remember {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context.applicationContext)
+            .setAudioAttributes(
+                androidx.media3.common.AudioAttributes.Builder()
+                    .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                    .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                true
+            )
+            .build()
+    }
+
+    // Release player resources when leaving this screen
+    DisposableEffect(Unit) {
+        onDispose {
+            player.release()
+        }
+    }
+
+    // Automatically pause any audio streaming from the music player service
+    LaunchedEffect(Unit) {
+        viewModel.pause()
+    }
 
     // Orientation configurations & dynamic orientation monitoring
     val configuration = LocalConfiguration.current
@@ -83,6 +115,23 @@ fun VideoPlayerScreen(
     var isLocked by remember { mutableStateOf(false) }
     var isControlsVisible by remember { mutableStateOf(true) }
     var showDetailsMenu by remember { mutableStateOf(false) }
+    var initiatedBySkip by remember { mutableStateOf(false) }
+
+    val view = androidx.compose.ui.platform.LocalView.current
+    val window = activity?.window
+    if (window != null) {
+        val windowInsetsController = remember(window, view) {
+            androidx.core.view.WindowCompat.getInsetsController(window, view)
+        }
+        LaunchedEffect(isControlsVisible) {
+            if (isControlsVisible) {
+                windowInsetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            } else {
+                windowInsetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+    }
 
     // Advanced interactive configurations with HUD Feedback
     var decoderMode by remember { mutableStateOf("Hardware Decoder") }
@@ -124,6 +173,48 @@ fun VideoPlayerScreen(
     }
 
     // Apply orientation locks
+    BackHandler(enabled = !isLocked) {
+        onClose()
+    }
+
+    val triggerPiP = {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+            val systemHasPip = activity?.packageManager?.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE) == true
+            val hasPermission = if (appOps != null) {
+                appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_PICTURE_IN_PICTURE,
+                    Process.myUid(),
+                    context.packageName
+                ) == AppOpsManager.MODE_ALLOWED
+            } else {
+                true
+            }
+
+            if (systemHasPip && hasPermission) {
+                try {
+                    val builder = android.app.PictureInPictureParams.Builder()
+                    activity?.enterPictureInPictureMode(builder.build())
+                } catch (e: Exception) {
+                    showHUD("PiP failed: ${e.message}", Icons.Filled.PictureInPicture)
+                }
+            } else {
+                showHUD("PiP disabled. Redirecting to settings...", Icons.Filled.PictureInPicture)
+                try {
+                    val intent = android.content.Intent(
+                        "android.settings.PICTURE_IN_PICTURE_SETTINGS",
+                        Uri.parse("package:${context.packageName}")
+                    )
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    showHUD("Could not open PiP Settings", Icons.Filled.PictureInPicture)
+                }
+            }
+        } else {
+            showHUD("PiP not supported on this device", Icons.Filled.PictureInPicture)
+        }
+    }
+
     LaunchedEffect(orientationMode) {
         activity?.let { act ->
             when (orientationMode) {
@@ -140,13 +231,17 @@ fun VideoPlayerScreen(
     }
 
     // Prepare exoplayer media items and save position on dispose
+    val isVideoResumePlayEnabled by viewModel.isVideoResumePlayEnabled.collectAsState()
     DisposableEffect(video.path) {
         player.stop()
         player.clearMediaItems()
         player.setMediaItem(MediaItem.fromUri(video.path))
-        if (video.lastPlayedPosition > 0L) {
+        if (isVideoResumePlayEnabled && video.lastPlayedPosition > 0L && !initiatedBySkip) {
             player.seekTo(video.lastPlayedPosition)
+        } else {
+            player.seekTo(0L)
         }
+        initiatedBySkip = false
         player.prepare()
         player.play()
 
@@ -268,7 +363,8 @@ fun VideoPlayerScreen(
             }
         }
 
-        // Android exoplayer rendering canvas
+        // Android exoplayer rendering canvas with dynamic pinch-to-zoom (25% to 200%)
+        var zoomScale by remember { mutableFloatStateOf(1.0f) }
         val videoCanvas = @Composable {
             AndroidView(
                 factory = { ctx ->
@@ -289,7 +385,12 @@ fun VideoPlayerScreen(
                         AspectRatioMode.FILL -> view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = zoomScale,
+                        scaleY = zoomScale
+                    )
             )
         }
 
@@ -306,7 +407,8 @@ fun VideoPlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(top = 28.dp)
+                        .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onClose) {
@@ -344,69 +446,84 @@ fun VideoPlayerScreen(
                             )
                         }
                         .pointerInput(Unit) {
-                            detectTransformGestures { centroid, pan, zoom, rotation ->
-                                if (latestIsLocked || !latestGestureControlsEnabled) return@detectTransformGestures
-                                if (zoom != 1f) {
-                                    val isLeftSide = centroid.x < size.width / 2f
-                                    val isIncrease = zoom > 1f
-                                    val ratio = abs(zoom - 1f)
-                                    if (isLeftSide) {
-                                        onPinchToAdjustBrightness(isIncrease, ratio)
-                                    } else {
-                                        onPinchToAdjustVolume(isIncrease, ratio)
-                                    }
-                                }
-                            }
-                        }
-                        .pointerInput(Unit) {
-                            var swipeDir: String? = null
-                            var isLeftSide = false
-                            detectDragGestures(
-                                onDragStart = { offset ->
-                                    if (latestIsLocked || !latestGestureControlsEnabled) return@detectDragGestures
-                                    swipeDir = null
-                                    isLeftSide = offset.x < size.width / 2f
-                                },
-                                onDrag = { change, dragAmount ->
-                                    if (latestIsLocked || !latestGestureControlsEnabled) return@detectDragGestures
-                                    change.consume()
-                                    val dx = dragAmount.x
-                                    val dy = dragAmount.y
+                            awaitEachGesture {
+                                var isZooming = false
+                                var swipeDir: String? = null
+                                var isLeftSide = false
+                                var dragStarted = false
 
-                                    if (swipeDir == null) {
-                                        swipeDir = if (abs(dx) > abs(dy)) "H" else "V"
-                                    }
-
-                                    if (swipeDir == "H") {
-                                        val duration = player.duration.coerceAtLeast(0L)
-                                        if (duration > 0) {
-                                            val shift = (dx * 160 * latestSensitivity).toLong()
-                                            val dest = (player.currentPosition + shift).coerceIn(0L, duration)
-                                            onSwipeToSeek(dest)
-                                            val delta = if (shift >= 0) "+${shift/1000}s" else "${shift/1000}s"
-                                            showHUD("Scrub: ${formatDuration(dest)} [$delta]", Icons.Filled.History)
-                                        }
-                                    } else {
-                                        if (isLeftSide) {
-                                            var b = latestBrightness - (dy / 300f) * latestSensitivity
-                                            b = b.coerceIn(0.01f, 1f)
-                                            currentBrightness = b
-                                            activity?.let { act ->
-                                                val winAttr = act.window.attributes
-                                                winAttr.screenBrightness = b
-                                                act.window.attributes = winAttr
+                                awaitFirstDown(requireUnconsumed = false)
+                                
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val changes = event.changes
+                                    val activePointers = changes.filter { it.pressed }
+                                    
+                                    if (activePointers.size >= 2) {
+                                        isZooming = true
+                                        if (!latestIsLocked && latestGestureControlsEnabled) {
+                                            val zoom = event.calculateZoom()
+                                            if (zoom != 1f) {
+                                                val prevScale = zoomScale
+                                                zoomScale = (zoomScale * zoom).coerceIn(0.25f, 2.0f)
+                                                if (prevScale != zoomScale) {
+                                                    showHUD("Crop Zoom: ${(zoomScale * 100).roundToInt()}%", Icons.Filled.AspectRatio)
+                                                }
                                             }
-                                            showHUD("Brightness: ${(b * 100).roundToInt()}%", Icons.Filled.LightMode)
-                                        } else {
-                                            var v = latestVolume - (dy / 12f) * latestSensitivity
-                                            v = v.coerceIn(0f, maxVolume)
-                                            currentVolume = v
-                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, v.roundToInt(), 0)
-                                            showHUD("Volume: ${((v / maxVolume) * 100).roundToInt()}%", Icons.Filled.VolumeUp)
+                                        }
+                                        changes.forEach { it.consume() }
+                                    } else if (activePointers.size == 1 && !isZooming) {
+                                        val change = activePointers.first()
+                                        if (!latestIsLocked && latestGestureControlsEnabled) {
+                                            if (!dragStarted) {
+                                                dragStarted = true
+                                                isLeftSide = change.position.x < size.width / 2f
+                                                swipeDir = null
+                                            } else {
+                                                val dragAmount = change.position - change.previousPosition
+                                                val dx = dragAmount.x
+                                                val dy = dragAmount.y
+                                                
+                                                if (dx != 0f || dy != 0f) {
+                                                    change.consume()
+                                                    if (swipeDir == null) {
+                                                        swipeDir = if (abs(dx) > abs(dy)) "H" else "V"
+                                                    }
+                                                    
+                                                    if (swipeDir == "H") {
+                                                        val duration = player.duration.coerceAtLeast(0L)
+                                                        if (duration > 0) {
+                                                            val shift = (dx * 160 * latestSensitivity).toLong()
+                                                            val dest = (player.currentPosition + shift).coerceIn(0L, duration)
+                                                            onSwipeToSeek(dest)
+                                                            val delta = if (shift >= 0) "+${shift/1000}s" else "${shift/1000}s"
+                                                            showHUD("Scrub: ${formatDuration(dest)} [$delta]", Icons.Filled.History)
+                                                        }
+                                                    } else {
+                                                        if (isLeftSide) {
+                                                            var b = latestBrightness - (dy / 300f) * latestSensitivity
+                                                            b = b.coerceIn(0.01f, 1f)
+                                                            currentBrightness = b
+                                                            activity?.let { act ->
+                                                                val winAttr = act.window.attributes
+                                                                winAttr.screenBrightness = b
+                                                                act.window.attributes = winAttr
+                                                            }
+                                                            showHUD("Brightness: ${(b * 100).roundToInt()}%", Icons.Filled.LightMode)
+                                                        } else {
+                                                            var v = latestVolume - (dy / 12f) * latestSensitivity
+                                                            v = v.coerceIn(0f, maxVolume)
+                                                            currentVolume = v
+                                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, v.roundToInt(), 0)
+                                                            showHUD("Volume: ${((v / maxVolume) * 100).roundToInt()}%", Icons.Filled.VolumeUp)
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
-                                }
-                            )
+                                } while (event.changes.any { it.pressed })
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -476,16 +593,7 @@ fun VideoPlayerScreen(
                                     .size(46.dp)
                                     .background(Color(0xFF202020), shape = CircleShape)
                                     .clickable {
-                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                            try {
-                                                val builder = android.app.PictureInPictureParams.Builder()
-                                                activity?.enterPictureInPictureMode(builder.build())
-                                            } catch (e: Exception) {
-                                                showHUD("PiP failed: ${e.message}", Icons.Filled.PictureInPicture)
-                                            }
-                                        } else {
-                                            showHUD("PiP action not supported", Icons.Filled.PictureInPicture)
-                                        }
+                                        triggerPiP()
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -656,6 +764,7 @@ fun VideoPlayerScreen(
                                     onClick = {
                                         val index = localVideos.indexOfFirst { it.path == video.path }
                                         if (index > 0) {
+                                            initiatedBySkip = true
                                             viewModel.setCurrentlyPlayingVideo(localVideos[index - 1])
                                         } else {
                                             showHUD("First video in deck", Icons.Filled.SkipPrevious)
@@ -692,6 +801,7 @@ fun VideoPlayerScreen(
                                     onClick = {
                                         val index = localVideos.indexOfFirst { it.path == video.path }
                                         if (index != -1 && index < localVideos.size - 1) {
+                                            initiatedBySkip = true
                                             viewModel.setCurrentlyPlayingVideo(localVideos[index + 1])
                                         } else {
                                             showHUD("Last video in deck", Icons.Filled.SkipNext)
@@ -741,13 +851,10 @@ fun VideoPlayerScreen(
                         detectTransformGestures { centroid, pan, zoom, rotation ->
                             if (latestIsLocked || !latestGestureControlsEnabled) return@detectTransformGestures
                             if (zoom != 1f) {
-                                val isLeftSide = centroid.x < size.width / 2f
-                                val isIncrease = zoom > 1f
-                                val ratio = abs(zoom - 1f)
-                                if (isLeftSide) {
-                                    onPinchToAdjustBrightness(isIncrease, ratio)
-                                } else {
-                                    onPinchToAdjustVolume(isIncrease, ratio)
+                                val prevScale = zoomScale
+                                zoomScale = (zoomScale * zoom).coerceIn(0.25f, 2.0f)
+                                if (prevScale != zoomScale) {
+                                    showHUD("Crop Zoom: ${(zoomScale * 100).roundToInt()}%", Icons.Filled.AspectRatio)
                                 }
                             }
                         }
@@ -821,7 +928,8 @@ fun VideoPlayerScreen(
                                 )
                             )
                             .statusBarsPadding()
-                            .padding(horizontal = 24.dp, vertical = 12.dp),
+                            .padding(top = 28.dp)
+                            .padding(start = 24.dp, end = 24.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -855,12 +963,7 @@ fun VideoPlayerScreen(
                             }
 
                             IconButton(onClick = {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                    val b = android.app.PictureInPictureParams.Builder()
-                                    activity?.enterPictureInPictureMode(b.build())
-                                } else {
-                                    showHUD("PiP not supported", Icons.Filled.PictureInPicture)
-                                }
+                                triggerPiP()
                             }) {
                                 Icon(Icons.Filled.PictureInPicture, contentDescription = "PiP", tint = Color.White, modifier = Modifier.size(20.dp))
                             }
@@ -980,12 +1083,18 @@ fun VideoPlayerScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Far Left: Lock controls
-                            IconButton(
-                                onClick = { isLocked = true },
-                                modifier = Modifier.size(48.dp)
+                            // Far Left Row (fixed width to balance the far right row)
+                            Row(
+                                modifier = Modifier.width(110.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Start
                             ) {
-                                Icon(Icons.Filled.LockOpen, contentDescription = "Lock", tint = Color.White, modifier = Modifier.size(24.dp))
+                                IconButton(
+                                    onClick = { isLocked = true },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(Icons.Filled.LockOpen, contentDescription = "Lock", tint = Color.White, modifier = Modifier.size(24.dp))
+                                }
                             }
 
                             // Perfectly Centered Skip previous, play/pause, skip next triggers
@@ -998,6 +1107,7 @@ fun VideoPlayerScreen(
                                     onClick = {
                                         val index = localVideos.indexOfFirst { it.path == video.path }
                                         if (index > 0) {
+                                            initiatedBySkip = true
                                             viewModel.setCurrentlyPlayingVideo(localVideos[index - 1])
                                         } else {
                                             showHUD("First video in deck", Icons.Filled.SkipPrevious)
@@ -1034,6 +1144,7 @@ fun VideoPlayerScreen(
                                     onClick = {
                                         val index = localVideos.indexOfFirst { it.path == video.path }
                                         if (index != -1 && index < localVideos.size - 1) {
+                                            initiatedBySkip = true
                                             viewModel.setCurrentlyPlayingVideo(localVideos[index + 1])
                                         } else {
                                             showHUD("Last video in deck", Icons.Filled.SkipNext)
@@ -1045,10 +1156,11 @@ fun VideoPlayerScreen(
                                 }
                             }
 
-                            // Far Right: Speed & Rotation controls
+                            // Far Right Row (fixed width matches the left)
                             Row(
+                                modifier = Modifier.width(110.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.End
                             ) {
                                 Text(
                                     text = "${playbackSpeed}x",
@@ -1352,11 +1464,23 @@ fun VideoPlayerScreen(
                         ) {
                             ToolCard(
                                 icon = Icons.Filled.Info,
-                                title = "Video Information Details",
-                                activeText = "Bitrate, size, resolution & path",
+                                title = "Video Information",
+                                activeText = "Bitrate, size & details",
                                 isActive = false,
                                 onClick = {
                                     showFullInfoDialog = true
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            ToolCard(
+                                icon = Icons.Filled.History,
+                                title = "Resume Playback",
+                                activeText = if (isVideoResumePlayEnabled) "On (Resume last stop)" else "Off (Start over)",
+                                isActive = isVideoResumePlayEnabled,
+                                onClick = {
+                                    viewModel.setVideoResumePlayEnabled(!isVideoResumePlayEnabled)
+                                    showHUD(if (!isVideoResumePlayEnabled) "Resume Mode Enabled" else "Resume Mode Disabled", Icons.Filled.History)
                                 },
                                 modifier = Modifier.weight(1f)
                             )

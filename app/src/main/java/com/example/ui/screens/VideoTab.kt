@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.widget.Toast
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.example.VideoPlaybackActivity
 import com.example.data.db.MediaEntity
 import com.example.ui.components.rememberVideoThumbnail
+import com.example.ui.components.SkeletonListLoader
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.viewmodel.MediaViewModel
@@ -137,6 +139,14 @@ fun VideoTab(
     var detailsDialogFolder by remember { mutableStateOf<String?>(null) }
     var deleteDialogFolder by remember { mutableStateOf<String?>(null) }
 
+    BackHandler(enabled = expandedFolder != null) {
+        expandedFolder = null
+    }
+
+    BackHandler(enabled = subTabSelection == 1 && expandedFolder == null) {
+        subTabSelection = 0
+    }
+
     // Grouping videos dynamically by folder path
     val videosByFolder = remember(videos) {
         videos.groupBy { video ->
@@ -150,6 +160,8 @@ fun VideoTab(
     }
 
     fun playVideo(videoItem: MediaEntity) {
+        viewModel.pause()
+        viewModel.setCurrentlyPlayingVideo(videoItem)
         val intent = Intent(context, VideoPlaybackActivity::class.java).apply {
             putExtra("extra_media_path", videoItem.path)
             putExtra("extra_media_title", videoItem.title)
@@ -194,7 +206,11 @@ fun VideoTab(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        if (videos.isEmpty()) {
+        val isScanning by viewModel.isScanning.collectAsState()
+
+        if (isScanning && videos.isEmpty()) {
+            SkeletonListLoader()
+        } else if (videos.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
@@ -666,6 +682,8 @@ fun VideoContextMenuBottomSheet(
             DropdownMenuItem(
                 text = { Text("Immediately Play", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
+                    viewModel.pause()
+                    viewModel.setCurrentlyPlayingVideo(video)
                     val intent = Intent(context, VideoPlaybackActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                         putExtra("extra_media_path", video.path)

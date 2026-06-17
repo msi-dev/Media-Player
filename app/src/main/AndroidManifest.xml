@@ -22,6 +22,7 @@
     <application
         android:name=".MediaPlayerApp"
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -92,6 +93,7 @@
         <activity
             android:name=".VideoPlaybackActivity"
             android:exported="false"
+            android:supportsPictureInPicture="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|smallestScreenSize"
             android:theme="@style/Theme.MyApplication" />
 

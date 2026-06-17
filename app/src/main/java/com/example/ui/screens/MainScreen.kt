@@ -12,6 +12,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -34,6 +37,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.db.MediaEntity
 import com.example.ui.components.AlbumArtImage
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.isImeVisible
+import com.example.ui.components.CdStyleAlbumArt
 import com.example.ui.components.CustomAospSeekBar
 import com.example.ui.components.AospVerticalSlider
 import com.example.ui.theme.DarkPrimary
@@ -59,6 +68,51 @@ fun MainScreen(
     val context = LocalContext.current
     val tabs = remember { listOf("Audio", "Video") }
     var activeTab by remember { mutableIntStateOf(0) }
+    var isPlayerExpanded by remember { mutableStateOf(false) }
+    var isSidebarOpen by remember { mutableStateOf(false) }
+    val tabHistory = remember { mutableStateListOf<Int>(0) }
+
+    val updateActiveTab = { idx: Int ->
+        if (activeTab != idx) {
+            tabHistory.add(idx)
+            activeTab = idx
+        }
+    }
+
+    val focusManager = LocalFocusManager.current
+    var isSearchFocused by remember { mutableStateOf(false) }
+
+    @OptIn(ExperimentalLayoutApi::class)
+    val isKeyboardVisible = WindowInsets.isImeVisible
+
+    LaunchedEffect(isKeyboardVisible) {
+        if (!isKeyboardVisible) {
+            focusManager.clearFocus()
+        }
+    }
+
+    BackHandler(enabled = isSearchFocused && !isPlayerExpanded && !isSidebarOpen) {
+        focusManager.clearFocus()
+    }
+
+    BackHandler(enabled = isPlayerExpanded) {
+        isPlayerExpanded = false
+    }
+
+    BackHandler(enabled = isSidebarOpen && !isPlayerExpanded) {
+        isSidebarOpen = false
+    }
+
+    BackHandler(enabled = tabHistory.size > 1 && !isPlayerExpanded && !isSidebarOpen) {
+        tabHistory.removeAt(tabHistory.lastIndex)
+        activeTab = tabHistory.last()
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.requestPlayerExpansion.collect {
+            isPlayerExpanded = true
+        }
+    }
     
     val safeActiveTab = remember(activeTab, tabs) {
         if (activeTab >= tabs.size && tabs.isNotEmpty()) {
@@ -72,8 +126,6 @@ fun MainScreen(
 
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    var isPlayerExpanded by remember { mutableStateOf(false) }
-    var isSidebarOpen by remember { mutableStateOf(false) }
 
     val searchQuery by viewModel.searchQuery.collectAsState()
 
@@ -115,7 +167,7 @@ fun MainScreen(
                         }
                         NavigationRailItem(
                             selected = safeActiveTab == index,
-                            onClick = { activeTab = index },
+                            onClick = { updateActiveTab(index) },
                             icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(28.dp)) },
                             label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp) },
                             colors = NavigationRailItemDefaults.colors(
@@ -163,7 +215,8 @@ fun MainScreen(
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(54.dp),
+                            .height(54.dp)
+                            .onFocusChanged { isSearchFocused = it.isFocused },
                         shape = RoundedCornerShape(27.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -284,7 +337,7 @@ fun MainScreen(
                         }
                         NavigationBarItem(
                             selected = safeActiveTab == index,
-                            onClick = { activeTab = index },
+                            onClick = { updateActiveTab(index) },
                             icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(26.dp)) },
                             label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 0.3.sp) },
                             colors = NavigationBarItemDefaults.colors(
@@ -374,10 +427,14 @@ fun MiniPlayerCard(
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     var showMiniSpeedDialog by remember { mutableStateOf(false) }
 
+    var isSeeking by remember { mutableStateOf(false) }
+    var localSeekProgress by remember { mutableFloatStateOf(0f) }
+    val currentDisplayPosition = if (isSeeking) (localSeekProgress * totalTime).toLong() else progress
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(108.dp)
+            .height(112.dp)
             .clickable(onClick = onClick)
             .border(
                 BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)),
@@ -390,8 +447,8 @@ fun MiniPlayerCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 8.dp, bottom = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(top = 10.dp, bottom = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -433,52 +490,33 @@ fun MiniPlayerCard(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(1.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    IconButton(onClick = { viewModel.toggleShuffle() }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle", tint = if (isShuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { viewModel.playPrevious() }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.SkipPrevious, contentDescription = "Prev", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = {
-                        if (isPlaying) viewModel.pause() else viewModel.play()
-                    }, modifier = Modifier.size(38.dp)) {
+                    IconButton(onClick = { viewModel.playPrevious() }, modifier = Modifier.size(44.dp)) {
                         Icon(
-                            if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                            contentDescription = "PlayPause",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(32.dp)
+                            imageVector = Icons.Filled.SkipPrevious,
+                            contentDescription = "Prev",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
                         )
                     }
-                    IconButton(onClick = { showMiniSpeedDialog = true }, modifier = Modifier.size(36.dp)) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.SlowMotionVideo,
-                                contentDescription = "Speed",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "${playbackSpeed}x",
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = { viewModel.toggleRepeatMode() }, modifier = Modifier.size(32.dp)) {
+                    IconButton(
+                        onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
+                        modifier = Modifier.size(52.dp)
+                    ) {
                         Icon(
-                            if (repeatMode == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                            contentDescription = "Repeat",
-                            tint = if (repeatMode > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(16.dp)
+                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                            contentDescription = "PlayPause",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(44.dp)
+                        )
+                    }
+                    IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(44.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.SkipNext,
+                            contentDescription = "Next",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
                         )
                     }
                 }
@@ -492,30 +530,30 @@ fun MiniPlayerCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = formatDuration(progress),
+                    text = formatDuration(currentDisplayPosition),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold
                 )
 
-                Slider(
-                    value = if (totalTime > 0) progress.toFloat() / totalTime else 0f,
-                    onValueChange = { ratio ->
-                        if (totalTime > 0) {
-                            val dest = (ratio * totalTime).toLong()
-                            viewModel.seekTo(dest)
-                        }
-                    },
+                Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(24.dp)
-                        .padding(horizontal = 4.dp),
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                        .padding(horizontal = 8.dp)
+                ) {
+                    CustomAospSeekBar(
+                        progress = if (totalTime > 0) currentDisplayPosition.toFloat() / totalTime else 0f,
+                        onValueChange = { percent ->
+                            isSeeking = true
+                            localSeekProgress = percent
+                        },
+                        onValueChangeFinished = {
+                            val target = (localSeekProgress * totalTime).toLong()
+                            viewModel.seekTo(target)
+                            isSeeking = false
+                        }
                     )
-                )
+                }
 
                 Text(
                     text = formatDuration(totalTime),
@@ -592,13 +630,13 @@ fun FullscreenPlayerSheet(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         // Blurred Abstract Dynamic cover background
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(MaterialTheme.colorScheme.background)
         )
 
         val dims = com.example.ui.theme.ResponsiveDimensions.dimensions
@@ -620,7 +658,7 @@ fun FullscreenPlayerSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onCollapse) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Collapse", tint = Color.White, modifier = Modifier.size(32.dp))
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Collapse", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -645,7 +683,7 @@ fun FullscreenPlayerSheet(
                     Icon(
                         imageVector = Icons.Filled.PlaylistPlay,
                         contentDescription = "Queue Overlay Sheet",
-                        tint = if (showQueueSheet) DarkPrimary else Color.White,
+                        tint = if (showQueueSheet) DarkPrimary else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -668,12 +706,12 @@ fun FullscreenPlayerSheet(
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        AlbumArtImage(
+                        CdStyleAlbumArt(
                             songPath = song.path,
                             songTitle = song.title,
+                            isPlaying = isPlaying,
                             modifier = Modifier
-                                .size(dims.albumArtSize.coerceAtMost(220.dp))
-                                .clip(RoundedCornerShape(20.dp))
+                                .size(200.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         AudioVisualizer(
@@ -699,7 +737,7 @@ fun FullscreenPlayerSheet(
                         ) {
                             Text(
                                 text = song.title,
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Black,
                                 maxLines = 1,
@@ -727,8 +765,8 @@ fun FullscreenPlayerSheet(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(formatDuration(currentDisplayPosition), color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Text(formatDuration(totalTime), color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(formatDuration(currentDisplayPosition), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(formatDuration(totalTime), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             CustomAospSeekBar(
                                 progress = if (totalTime > 0) currentDisplayPosition.toFloat() / totalTime else 0f,
@@ -752,19 +790,35 @@ fun FullscreenPlayerSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(onClick = { viewModel.toggleShuffle() }) {
-                                Icon(Icons.Filled.Shuffle, null, tint = if (isShuffle) DarkPrimary else Color.White.copy(alpha = 0.55f), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Filled.Shuffle, null, tint = if (isShuffle) DarkPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f), modifier = Modifier.size(20.dp))
                             }
                             IconButton(onClick = { viewModel.playPrevious() }) {
-                                Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                Icon(Icons.Filled.SkipPrevious, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
                             }
-                            IconButton(onClick = { if (isPlaying) viewModel.pause() else viewModel.play() }) {
-                                Icon(if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle, null, tint = DarkPrimary, modifier = Modifier.size(56.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), shape = CircleShape)
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                IconButton(
+                                    onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
+                                    modifier = Modifier.size(64.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                        contentDescription = "Play/Pause",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(56.dp)
+                                    )
+                                }
                             }
                             IconButton(onClick = { viewModel.playNext() }) {
-                                Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                Icon(Icons.Filled.SkipNext, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
                             }
                             IconButton(onClick = { viewModel.toggleRepeatMode() }) {
-                                Icon(if (repeatMode == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat, null, tint = if (repeatMode > 0) DarkPrimary else Color.White.copy(alpha = 0.55f), modifier = Modifier.size(20.dp))
+                                Icon(if (repeatMode == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat, null, tint = if (repeatMode > 0) DarkPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f), modifier = Modifier.size(20.dp))
                             }
                         }
 
@@ -772,22 +826,22 @@ fun FullscreenPlayerSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), shape = RoundedCornerShape(10.dp))
                                 .padding(vertical = 6.dp, horizontal = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(modifier = Modifier.clickable { showSpeedDialog = true }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Icon(Icons.Filled.SlowMotionVideo, null, tint = DarkPrimary, modifier = Modifier.size(14.dp))
-                                Text("Speed: ${playbackSpeed}x", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Speed: ${playbackSpeed}x", color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             Row(modifier = Modifier.clickable { showEqualizerDialog = true }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Icon(Icons.Filled.Equalizer, null, tint = DarkPrimary, modifier = Modifier.size(14.dp))
-                                Text("EQ", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("EQ", color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             Row(modifier = Modifier.clickable { if (timerRemaining > 0) viewModel.setSleepTimer(0) else showSleepTimerPicker = true }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Filled.Alarm, null, tint = if (timerRemaining > 0) DarkTertiary else Color.Gray, modifier = Modifier.size(14.dp))
-                                Text(if (timerRemaining > 0) formatDuration(timerRemaining) else "Sleep off", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Filled.Alarm, null, tint = if (timerRemaining > 0) DarkTertiary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                                Text(if (timerRemaining > 0) formatDuration(timerRemaining) else "Sleep off", color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -801,12 +855,12 @@ fun FullscreenPlayerSheet(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    AlbumArtImage(
+                    CdStyleAlbumArt(
                         songPath = song.path,
                         songTitle = song.title,
+                        isPlaying = isPlaying,
                         modifier = Modifier
-                            .size(dims.albumArtSize)
-                            .clip(RoundedCornerShape(24.dp))
+                            .size(if (dims.albumArtSize > 180.dp) 300.dp else 260.dp)
                     )
 
                     // Dynamic wave spectrum visualization
@@ -827,7 +881,7 @@ fun FullscreenPlayerSheet(
                 ) {
                     Text(
                         text = song.title,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
@@ -842,7 +896,7 @@ fun FullscreenPlayerSheet(
                     )
                     Text(
                         text = "${song.album} (Support APE/FLAC High Fidelity decode)",
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         textAlign = TextAlign.Center
                     )
@@ -861,8 +915,8 @@ fun FullscreenPlayerSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatDuration(currentDisplayPosition), color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(formatDuration(totalTime), color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(formatDuration(currentDisplayPosition), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(formatDuration(totalTime), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     CustomAospSeekBar(
@@ -892,7 +946,7 @@ fun FullscreenPlayerSheet(
                         Icon(
                             Icons.Filled.Shuffle,
                             contentDescription = "Shuffle",
-                            tint = if (isShuffle) DarkPrimary else Color.White.copy(alpha = 0.55f),
+                            tint = if (isShuffle) DarkPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -905,22 +959,30 @@ fun FullscreenPlayerSheet(
                         Icon(
                             imageVector = Icons.Filled.SkipPrevious,
                             contentDescription = "Previous",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(44.dp)
                         )
                     }
 
-                    // Core play pause trigger (enlarged)
-                    IconButton(
-                        onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
-                        modifier = Modifier.size(96.dp)
+                    // Core play pause trigger (enlarged with halo highlight)
+                    Box(
+                        modifier = Modifier
+                            .size(110.dp)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), shape = CircleShape)
+                            .padding(4.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                            contentDescription = "PlayPause",
-                            tint = DarkPrimary,
-                            modifier = Modifier.size(90.dp)
-                        )
+                        IconButton(
+                            onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
+                            modifier = Modifier.size(96.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                contentDescription = "PlayPause",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(90.dp)
+                            )
+                        }
                     }
 
                     // Skip next (enlarged)
@@ -931,7 +993,7 @@ fun FullscreenPlayerSheet(
                         Icon(
                             imageVector = Icons.Filled.SkipNext,
                             contentDescription = "Next",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(44.dp)
                         )
                     }
@@ -945,7 +1007,7 @@ fun FullscreenPlayerSheet(
                                 else -> Icons.Filled.Repeat
                             },
                             contentDescription = "Repeat",
-                            tint = if (repeatMode > 0) DarkPrimary else Color.White.copy(alpha = 0.55f),
+                            tint = if (repeatMode > 0) DarkPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -957,7 +1019,7 @@ fun FullscreenPlayerSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), shape = RoundedCornerShape(12.dp))
                         .padding(vertical = 8.dp, horizontal = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -970,7 +1032,7 @@ fun FullscreenPlayerSheet(
                         }
                     ) {
                         Icon(Icons.Filled.SlowMotionVideo, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(16.dp))
-                        Text("Speed: ${playbackSpeed}x", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Speed: ${playbackSpeed}x", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Row(
@@ -981,7 +1043,7 @@ fun FullscreenPlayerSheet(
                         }
                     ) {
                         Icon(Icons.Filled.Equalizer, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(16.dp))
-                        Text("Equalizer", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Equalizer", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Row(
@@ -995,10 +1057,10 @@ fun FullscreenPlayerSheet(
                             }
                         }
                     ) {
-                        Icon(Icons.Filled.Alarm, contentDescription = null, tint = if (timerRemaining > 0) DarkTertiary else Color.Gray, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Filled.Alarm, contentDescription = null, tint = if (timerRemaining > 0) DarkTertiary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         Text(
                             text = if (timerRemaining > 0) formatDuration(timerRemaining) else "Sleep off",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -1008,42 +1070,12 @@ fun FullscreenPlayerSheet(
         }
     }
 
-    // Modern Dialog for Speed Selection
+    // Modern Slide Up Sheet for Speed Selection
     if (showSpeedDialog) {
-        AlertDialog(
-            onDismissRequest = { showSpeedDialog = false },
-            title = { Text("Playback Speed", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-                    speeds.forEach { speed ->
-                        val selected = playbackSpeed == speed
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.setPlaybackSpeed(speed)
-                                    showSpeedDialog = false
-                                }
-                                .padding(vertical = 10.dp, horizontal = 12.dp)
-                                .background(if (selected) DarkPrimary.copy(alpha = 0.2f) else Color.Transparent, shape = RoundedCornerShape(8.dp)),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("${speed}x", color = if (selected) DarkPrimary else Color.White, fontSize = 14.sp)
-                            if (selected) {
-                                Icon(Icons.Filled.Check, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSpeedDialog = false }) {
-                    Text("Close", color = DarkPrimary)
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        SpeedOverlayBottomSheet(
+            playbackSpeed = playbackSpeed,
+            viewModel = viewModel,
+            onDismiss = { showSpeedDialog = false }
         )
     }
 
@@ -1055,58 +1087,11 @@ fun FullscreenPlayerSheet(
         )
     }
 
-    // Modern Material 3 Sleep Timer Clock-Face Picker Dialog
+    // Modern Material 3 Sleep Timer Slide-Up Bottom Sheet
     if (showSleepTimerPicker) {
-        val pickerState = rememberTimePickerState(
-            is24Hour = true
-        )
-
-        AlertDialog(
-            onDismissRequest = { showSleepTimerPicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val now = java.util.Calendar.getInstance()
-                        val currentHour = now.get(java.util.Calendar.HOUR_OF_DAY)
-                        val currentMinute = now.get(java.util.Calendar.MINUTE)
-
-                        var deltaMinutes = (pickerState.hour * 60 + pickerState.minute) - (currentHour * 60 + currentMinute)
-                        if (deltaMinutes <= 0) {
-                            deltaMinutes += 24 * 60 // Target is tomorrow
-                        }
-                        viewModel.setSleepTimer(deltaMinutes)
-                        showSleepTimerPicker = false
-                    }
-                ) {
-                    Text("Set", color = DarkPrimary, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSleepTimerPicker = false }) {
-                    Text("Cancel", color = Color.Gray)
-                }
-            },
-            title = {
-                Text("Select Sleep Stop Time", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            },
-            text = {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    TimePicker(
-                        state = pickerState,
-                        colors = TimePickerDefaults.colors(
-                            clockDialColor = Color.DarkGray,
-                            selectorColor = DarkPrimary,
-                            periodSelectorBorderColor = DarkPrimary,
-                            clockDialSelectedContentColor = Color.Black,
-                            clockDialUnselectedContentColor = Color.LightGray
-                        )
-                    )
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        SleepTimerOverlayBottomSheet(
+            viewModel = viewModel,
+            onDismiss = { showSleepTimerPicker = false }
         )
     }
 
@@ -1131,8 +1116,8 @@ fun QueueOverlayBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
-        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(12.dp),
-        dragHandle = { BottomSheetDefaults.DragHandle(color = DarkPrimary) }
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) }
     ) {
         Column(
             modifier = Modifier
@@ -1149,7 +1134,7 @@ fun QueueOverlayBottomSheet(
             ) {
                 Text(
                     text = "Playback Queue (${queue.size} Songs)",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Black,
                     fontSize = 17.sp
                 )
@@ -1176,7 +1161,7 @@ fun QueueOverlayBottomSheet(
                         .height(200.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No tracks inside execution queue", color = Color.Gray, fontSize = 13.sp)
+                    Text("No tracks inside execution queue", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             } else {
                 LazyColumn(
@@ -1194,13 +1179,13 @@ fun QueueOverlayBottomSheet(
                                     viewModel.playSongAtIndex(queue, idx)
                                 }
                                 .background(
-                                    if (active) DarkPrimary.copy(alpha = 0.12f) else Color.Transparent,
+                                    if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
                                     shape = RoundedCornerShape(10.dp)
                                 )
                                 .border(
                                     border = BorderStroke(
                                         width = 1.dp,
-                                        color = if (active) DarkPrimary.copy(alpha = 0.3f) else Color.Transparent
+                                        color = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else Color.Transparent
                                     ),
                                     shape = RoundedCornerShape(10.dp)
                                 )
@@ -1224,7 +1209,7 @@ fun QueueOverlayBottomSheet(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = item.title,
-                                        color = if (active) DarkPrimary else Color.White,
+                                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                         fontSize = 13.sp,
                                         fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
                                         maxLines = 1,
@@ -1232,7 +1217,7 @@ fun QueueOverlayBottomSheet(
                                     )
                                     Text(
                                         text = item.artist,
-                                        color = if (active) DarkPrimary.copy(alpha = 0.7f) else Color.Gray,
+                                        color = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -1248,7 +1233,7 @@ fun QueueOverlayBottomSheet(
                                     Icon(
                                         imageVector = Icons.Filled.VolumeUp,
                                         contentDescription = "Active Playing",
-                                        tint = DarkPrimary,
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1259,7 +1244,7 @@ fun QueueOverlayBottomSheet(
                                     Icon(
                                         imageVector = Icons.Filled.Delete,
                                         contentDescription = "Remove From Queue",
-                                        tint = Color.Gray,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1332,14 +1317,16 @@ fun EqualizerOverlayBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
-        containerColor = Color(0xFF161616),
-        dragHandle = { BottomSheetDefaults.DragHandle(color = DarkPrimary) }
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .fillMaxHeight(0.75f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -1353,10 +1340,15 @@ fun EqualizerOverlayBottomSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Filled.Equalizer, contentDescription = null, tint = DarkPrimary, modifier = Modifier.size(28.dp))
+                    Icon(
+                        imageVector = Icons.Filled.Equalizer,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
                     Text(
                         text = "Professional Equalizer", 
-                        color = Color.White, 
+                        color = MaterialTheme.colorScheme.onSurface, 
                         fontWeight = FontWeight.Black, 
                         fontSize = 18.sp
                     )
@@ -1366,10 +1358,10 @@ fun EqualizerOverlayBottomSheet(
                     checked = eqActive,
                     onCheckedChange = { viewModel.toggleEqualizer(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = DarkPrimary,
-                        checkedTrackColor = DarkPrimary.copy(alpha = 0.4f),
-                        uncheckedThumbColor = Color.Gray,
-                        uncheckedTrackColor = Color.DarkGray
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 )
             }
@@ -1383,8 +1375,8 @@ fun EqualizerOverlayBottomSheet(
                     TextButton(
                         onClick = { useWebEqualizer = false },
                         colors = ButtonDefaults.textButtonColors(
-                            containerColor = if (!useWebEqualizer) DarkPrimary.copy(alpha = 0.2f) else Color.Transparent,
-                            contentColor = if (!useWebEqualizer) DarkPrimary else Color.Gray
+                            containerColor = if (!useWebEqualizer) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
+                            contentColor = if (!useWebEqualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -1393,8 +1385,8 @@ fun EqualizerOverlayBottomSheet(
                     TextButton(
                         onClick = { useWebEqualizer = true },
                         colors = ButtonDefaults.textButtonColors(
-                            containerColor = if (useWebEqualizer) DarkPrimary.copy(alpha = 0.2f) else Color.Transparent,
-                            contentColor = if (useWebEqualizer) DarkPrimary else Color.Gray
+                            containerColor = if (useWebEqualizer) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
+                            contentColor = if (useWebEqualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -1402,48 +1394,48 @@ fun EqualizerOverlayBottomSheet(
                     }
                 }
 
-                if (useWebEqualizer) {
-                    WebAudioEqualizerView(viewModel = viewModel)
-                } else {
-                    // Preset horizontal scrolling chips!
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "Presets",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        
-                        androidx.compose.foundation.lazy.LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(presets.size) { index ->
-                                val preset = presets[index]
-                                val isSelected = bands == preset.second
-                                Box(
-                                    modifier = Modifier
-                                        .background(
-                                            color = if (isSelected) DarkPrimary else Color(0xFF262626),
-                                            shape = RoundedCornerShape(16.dp)
-                                        )
-                                        .clickable {
-                                            viewModel.setEqualizerPreset(preset.second)
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                                ) {
-                                    Text(
-                                        text = preset.first,
-                                        color = if (isSelected) Color.Black else Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
+                // Preset horizontal scrolling chips (Visible & usable in both modes!)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Acoustic Presets",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(presets.size) { index ->
+                            val preset = presets[index]
+                            val isSelected = bands == preset.second
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        shape = RoundedCornerShape(16.dp)
                                     )
-                                }
+                                    .clickable {
+                                        viewModel.setEqualizerPreset(preset.second)
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = preset.first,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
+                }
 
+                if (useWebEqualizer) {
+                    WebAudioEqualizerView(viewModel = viewModel)
+                } else {
                     // Vertical Sliders Deck!
                     Row(
                         modifier = Modifier
@@ -1459,7 +1451,7 @@ fun EqualizerOverlayBottomSheet(
                             ) {
                                 Text(
                                     text = "${if (value >= 0) "+" else ""}${value} dB",
-                                    color = if (value != 0) DarkPrimary else Color.Gray,
+                                    color = if (value != 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Black
                                 )
@@ -1474,7 +1466,7 @@ fun EqualizerOverlayBottomSheet(
                                 
                                 Text(
                                     text = frequencies.getOrElse(idx) { "" },
-                                    color = Color.LightGray,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1486,7 +1478,7 @@ fun EqualizerOverlayBottomSheet(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp),
+                        .height(260.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -1495,21 +1487,21 @@ fun EqualizerOverlayBottomSheet(
                         modifier = Modifier.padding(horizontal = 24.dp)
                     ) {
                         Icon(
-                            Icons.Filled.Equalizer, 
+                            imageVector = Icons.Filled.Equalizer, 
                             contentDescription = null, 
-                            tint = Color.Gray.copy(alpha = 0.5f), 
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), 
                             modifier = Modifier.size(48.dp)
                         )
                         Text(
                             text = "Equalizer is Disabled",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center
                         )
                         Text(
                             text = "Toggle active hardware frequencies on the top right to customize your ambient theater acoustics.",
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
                             textAlign = TextAlign.Center
                         )
@@ -1522,11 +1514,12 @@ fun EqualizerOverlayBottomSheet(
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
+@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 fun WebAudioEqualizerView(viewModel: MediaViewModel, modifier: Modifier = Modifier) {
     val bands by viewModel.eqBands.collectAsState()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
 
     // Sync from native to Web View faders
     LaunchedEffect(bands) {
@@ -1539,12 +1532,15 @@ fun WebAudioEqualizerView(viewModel: MediaViewModel, modifier: Modifier = Modifi
         }
     }
 
+    val containerBg = if (darkTheme) Color(0xFF111111) else Color(0xFFF8F9FA)
+    val borderCol = if (darkTheme) Color(0xFF222222) else Color(0xFFCFD8DC)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(380.dp)
-            .background(Color(0xFF111111), shape = RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0xFF222222), shape = RoundedCornerShape(12.dp))
+            .background(containerBg, shape = RoundedCornerShape(12.dp))
+            .border(1.dp, borderCol, shape = RoundedCornerShape(12.dp))
             .padding(4.dp)
     ) {
         AndroidView(
@@ -1557,6 +1553,12 @@ fun WebAudioEqualizerView(viewModel: MediaViewModel, modifier: Modifier = Modifi
                     }
                     webViewClient = WebViewClient()
                     
+                    // Prevent parent scroll/sheet drag from intercepting drag events on WebView sliders
+                    setOnTouchListener { v, event ->
+                        v.parent?.requestDisallowInterceptTouchEvent(true)
+                        false
+                    }
+                    
                     // Add JavaScript Bridge for Web->Native sync
                     addJavascriptInterface(object {
                         @JavascriptInterface
@@ -1566,7 +1568,7 @@ fun WebAudioEqualizerView(viewModel: MediaViewModel, modifier: Modifier = Modifi
                         }
                     }, "AndroidBridge")
                     
-                    loadUrl("file:///android_asset/web_audio_equalizer.html")
+                    loadUrl("file:///android_asset/web_audio_equalizer.html?darkTheme=$darkTheme")
                     webViewRef = this
                 }
             },
@@ -1575,5 +1577,276 @@ fun WebAudioEqualizerView(viewModel: MediaViewModel, modifier: Modifier = Modifi
                 webViewRef = webView
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SpeedOverlayBottomSheet(
+    playbackSpeed: Float,
+    viewModel: MediaViewModel,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 8.dp)
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Playback Speed",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // Speed preset grid
+            val speeds = listOf(0.25f, 0.50f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
+            
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val chunks = speeds.chunked(4)
+                chunks.forEach { chunk ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        chunk.forEach { speed ->
+                            val isSelected = playbackSpeed == speed
+                            Button(
+                                onClick = {
+                                    viewModel.setPlaybackSpeed(speed)
+                                    onDismiss()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = if (speed == 1.0f) "1x (Def)" else "${speed}x",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SleepTimerOverlayBottomSheet(
+    viewModel: MediaViewModel,
+    onDismiss: () -> Unit
+) {
+    val pickerState = rememberTimePickerState(is24Hour = true)
+    var customInputMinutes by remember { mutableStateOf("") }
+    
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "Sleep Stop Timer",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // Preset Quick Buttons Row
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Preset Timings",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                
+                val presets = listOf(
+                    "5m" to 5,
+                    "15m" to 15,
+                    "30m" to 30,
+                    "45m" to 45,
+                    "1 Hour" to 60,
+                    "2 Hours" to 120
+                )
+                
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(presets.size) { idx ->
+                        val (label, mins) = presets[idx]
+                        Button(
+                            onClick = {
+                                viewModel.setSleepTimer(mins)
+                                onDismiss()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                contentColor = MaterialTheme.colorScheme.primary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+            // Time Picker Header & Clock picker view
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Select Specific Clock Stop Time",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                // M3 TimePicker with responsive thematic coloring
+                TimePicker(
+                    state = pickerState,
+                    colors = TimePickerDefaults.colors(
+                        clockDialColor = MaterialTheme.colorScheme.surfaceVariant,
+                        selectorColor = MaterialTheme.colorScheme.primary,
+                        periodSelectorBorderColor = MaterialTheme.colorScheme.primary,
+                        clockDialSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
+                        clockDialUnselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        timeSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        timeSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        timeSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+                
+                Button(
+                    onClick = {
+                        val now = java.util.Calendar.getInstance()
+                        val currentHour = now.get(java.util.Calendar.HOUR_OF_DAY)
+                        val currentMinute = now.get(java.util.Calendar.MINUTE)
+
+                        var deltaMinutes = (pickerState.hour * 60 + pickerState.minute) - (currentHour * 60 + currentMinute)
+                        if (deltaMinutes <= 0) {
+                            deltaMinutes += 24 * 60 // Target is tomorrow
+                        }
+                        viewModel.setSleepTimer(deltaMinutes)
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Set Clock Stop Time", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+            // Custom Input Minutes Text Field Form
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Custom Stop Interval",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = customInputMinutes,
+                        onValueChange = { input ->
+                            if (input.all { it.isDigit() }) {
+                                customInputMinutes = input
+                            }
+                        },
+                        placeholder = { Text("Minutes", fontSize = 12.sp) },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+                    
+                    Button(
+                        onClick = {
+                            val mins = customInputMinutes.toIntOrNull()
+                            if (mins != null && mins > 0) {
+                                viewModel.setSleepTimer(mins)
+                                onDismiss()
+                            }
+                        },
+                        enabled = customInputMinutes.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            contentColor = MaterialTheme.colorScheme.onSecondary
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Text("Apply", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }

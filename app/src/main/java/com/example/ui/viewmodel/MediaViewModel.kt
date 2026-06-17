@@ -13,6 +13,8 @@ import com.example.data.repository.MediaRepository
 import com.example.data.repository.HiddenFolderRepository
 import com.example.playback.PlaybackManager
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +30,9 @@ class MediaViewModel(
 ) : AndroidViewModel(application) {
 
     private val TAG = "MediaViewModel"
+
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning = _isScanning.asStateFlow()
 
     // Hidden Folders Flow
     val hiddenFolders = hiddenFolderRepository.allHiddenFolders.stateIn(
@@ -119,6 +124,15 @@ class MediaViewModel(
     // Settings States (persisted via SharedPreferences, customizable in UI)
     private val prefs = application.getSharedPreferences("media_player_settings", android.content.Context.MODE_PRIVATE)
 
+    private val _requestPlayerExpansion = MutableSharedFlow<Unit>(replay = 0)
+    val requestPlayerExpansion = _requestPlayerExpansion.asSharedFlow()
+
+    fun requestPlayerExpanded() {
+        viewModelScope.launch {
+            _requestPlayerExpansion.emit(Unit)
+        }
+    }
+
     private val preferenceChangeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             "enabled_tabs_order" -> {
@@ -203,6 +217,14 @@ class MediaViewModel(
     private val _gestureControlsEnabled = MutableStateFlow(prefs.getBoolean("gesture_controls_enabled", true))
     val gestureControlsEnabled = _gestureControlsEnabled.asStateFlow()
 
+    private val _isVideoResumePlayEnabled = MutableStateFlow(prefs.getBoolean("video_resume_play_enabled", true))
+    val isVideoResumePlayEnabled = _isVideoResumePlayEnabled.asStateFlow()
+
+    fun setVideoResumePlayEnabled(enabled: Boolean) {
+        _isVideoResumePlayEnabled.value = enabled
+        prefs.edit().putBoolean("video_resume_play_enabled", enabled).apply()
+    }
+
     private val _selectedPlaylistSongs = MutableStateFlow<List<MediaEntity>>(emptyList())
     val selectedPlaylistSongs = _selectedPlaylistSongs.asStateFlow()
 
@@ -265,7 +287,14 @@ class MediaViewModel(
     init {
         // Automatically scan files on creation (smart cached startup loads Room instantly)
         viewModelScope.launch {
-            repository.scanLocalMedia(forceScan = false)
+            _isScanning.value = true
+            try {
+                repository.scanLocalMedia(forceScan = false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error scanning local media on init: ${e.message}")
+            } finally {
+                _isScanning.value = false
+            }
         }
 
         // Persisted state and Smart Resume startup automation
@@ -290,9 +319,9 @@ class MediaViewModel(
                                 val itemsMap = dbItems.associateBy { it.path }
                                 val orderedList = savedPaths.mapNotNull { itemsMap[it] }
 
-                                if (orderedList.isNotEmpty()) {
+                                 if (orderedList.isNotEmpty()) {
                                     val activeIndex = orderedList.indexOfFirst { it.path == savedSongPath }.coerceAtLeast(0)
-                                    playbackManager.setQueue(orderedList, activeIndex)
+                                    playbackManager.setQueue(orderedList, activeIndex, playWhenReady = false)
                                     if (savedPos > 0L) {
                                         playbackManager.seekTo(savedPos)
                                     }
@@ -342,11 +371,10 @@ class MediaViewModel(
             val listToLoad = if (rawCategoryList.any { it.path == lastItem.path }) rawCategoryList else listOf(lastItem)
             val indexToResume = listToLoad.indexOfFirst { it.path == lastItem.path }.coerceAtLeast(0)
             
-            playbackManager.setQueue(listToLoad, indexToResume)
+            playbackManager.setQueue(listToLoad, indexToResume, playWhenReady = false)
             if (targetPosition > 0L) {
                 playbackManager.seekTo(targetPosition)
             }
-            playbackManager.play()
         }
     }
 
@@ -356,7 +384,14 @@ class MediaViewModel(
 
     fun forceScanMedia() {
         viewModelScope.launch {
-            repository.scanLocalMedia(forceScan = true)
+            _isScanning.value = true
+            try {
+                repository.scanLocalMedia(forceScan = true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error forcing media scan: ${e.message}")
+            } finally {
+                _isScanning.value = false
+            }
         }
     }
 
@@ -366,8 +401,15 @@ class MediaViewModel(
         if (selectedMedia.isVideo) {
             setCurrentlyPlayingVideo(selectedMedia)
         } else {
-            playbackManager.setQueue(songs, index)
-            recordPlaybackEvent(selectedMedia.path)
+            if (playbackManager.currentSong.value?.path == selectedMedia.path) {
+                if (!playbackManager.isPlaying.value) {
+                    playbackManager.play()
+                }
+            } else {
+                playbackManager.setQueue(songs, index, playWhenReady = true)
+                recordPlaybackEvent(selectedMedia.path)
+            }
+            requestPlayerExpanded()
         }
     }
 
@@ -375,8 +417,14 @@ class MediaViewModel(
         if (media.isVideo) {
             setCurrentlyPlayingVideo(media)
         } else {
-            playbackManager.setQueue(listOf(media), 0)
-            playbackManager.play()
+            if (playbackManager.currentSong.value?.path == media.path) {
+                if (!playbackManager.isPlaying.value) {
+                    playbackManager.play()
+                }
+            } else {
+                playbackManager.setQueue(listOf(media), 0, playWhenReady = true)
+            }
+            requestPlayerExpanded()
         }
     }
 

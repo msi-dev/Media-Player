@@ -233,6 +233,75 @@
     <div class="footer-note">Full-duplex Web &amp; AOSP Hardware Sync Active</div>
 
     <script>
+        // Dynamic theme setup
+        const params = new URLSearchParams(window.location.search);
+        const isDark = params.get('darkTheme') !== 'false';
+        if (!isDark) {
+            document.body.style.background = "#F8F9FA";
+            document.body.style.color = "#000000";
+            
+            const h2 = document.querySelector('h2');
+            if (h2) {
+                h2.style.color = "#6200EE";
+                h2.style.textShadow = "none";
+            }
+            
+            const p = document.querySelector('p');
+            if (p) p.style.color = "#424242";
+            
+            const visualizer = document.getElementById('visualizer');
+            if (visualizer) {
+                visualizer.style.background = "#ECEFF1";
+                visualizer.style.borderColor = "#B0BEC5";
+            }
+            
+            const synthControls = document.querySelector('.synth-controls');
+            if (synthControls) {
+                synthControls.style.background = "#FFFFFF";
+                synthControls.style.borderColor = "#CFD8DC";
+            }
+            
+            const eqContainer = document.querySelector('.eq-container');
+            if (eqContainer) {
+                eqContainer.style.background = "#FFFFFF";
+                eqContainer.style.borderColor = "#CFD8DC";
+            }
+            
+            const synthLabel = document.querySelector('.synth-label');
+            if (synthLabel) synthLabel.style.color = "#6200EE";
+            
+            const synthBtn = document.getElementById('toggle-synth-btn');
+            if (synthBtn) {
+                synthBtn.style.background = "#6200EE";
+                synthBtn.style.color = "#FFFFFF";
+                synthBtn.style.boxShadow = "none";
+            }
+            
+            const eqVals = document.querySelectorAll('.eq-val');
+            eqVals.forEach(v => {
+                v.style.background = "rgba(98,0,238,0.15)";
+                v.style.color = "#6200EE";
+            });
+            
+            const sliders = document.querySelectorAll('.eq-slider');
+            sliders.forEach(s => {
+                s.style.background = "#CFD8DC";
+            });
+            
+            const style = document.createElement('style');
+            style.innerHTML = `
+                .eq-slider::-webkit-slider-thumb {
+                    background: #6200EE !important;
+                    border: 3px solid #FFFFFF !important;
+                    box-shadow: 0 0 8px rgba(98,0,238,0.4) !important;
+                }
+                .eq-title {
+                    color: #424242 !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
         // Web Audio Setup
         let audioCtx;
         let oscillator;

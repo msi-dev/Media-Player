@@ -12,41 +12,41 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
-    primary = DarkPrimary,
-    secondary = DarkSecondary,
-    tertiary = DarkTertiary,
-    background = DarkBackground,
-    surface = DarkSurface,
-    onPrimary = DarkBackground,
-    onSecondary = DarkBackground,
-    onTertiary = DarkBackground,
-    onBackground = TextPrimaryDark,
-    onSurface = TextPrimaryDark,
-    surfaceVariant = DarkSurface,
-    onSurfaceVariant = TextSecondaryDark,
-    outline = BorderDark
+    primary = Color(0xFFCCCCCC), // Light grey accent
+    secondary = Color(0xFF9E9E9E), // Medium grey accent
+    tertiary = Color(0xFF757575), // Darker grey accent
+    background = Color(0xFF000000), // Pure Black background
+    surface = Color(0xFF000000), // Pure Black surface
+    onPrimary = Color(0xFF000000), // Black text on primary
+    onSecondary = Color(0xFF000000),
+    onTertiary = Color(0xFF000000),
+    onBackground = Color(0xFFFFFFFF), // Pure White text
+    onSurface = Color(0xFFFFFFFF), // Pure White text on surface
+    surfaceVariant = Color(0xFF161616), // Extremely dark grey
+    onSurfaceVariant = Color(0xFF9E9E9E), // Soft grey text
+    outline = Color(0xFF303030) // Dark outline
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = LightPrimary,
-    secondary = LightSecondary,
-    tertiary = LightTertiary,
-    background = LightBackground,
-    surface = LightSurface,
-    onPrimary = Color.White,
-    onSecondary = Color(0xFF1C1B1F),
-    onTertiary = Color.White,
-    onBackground = Color(0xFF121212),
-    onSurface = Color(0xFF121212),
-    surfaceVariant = Color(0xFFE5EDE5),
-    onSurfaceVariant = Color(0xFF1E2F1E),
-    outline = Color(0xFF79747E)
+    primary = Color(0xFF424242), // Dark grey accent
+    secondary = Color(0xFF616161), // Medium grey accent
+    tertiary = Color(0xFF9E9E9E), // Light grey accent
+    background = Color(0xFFFFFFFF), // Pure White background
+    surface = Color(0xFFFFFFFF), // Pure White surface
+    onPrimary = Color(0xFFFFFFFF), // White text on primary
+    onSecondary = Color(0xFFFFFFFF),
+    onTertiary = Color(0xFFFFFFFF),
+    onBackground = Color(0xFF000000), // Pure Black text
+    onSurface = Color(0xFF000000), // Pure Black text on surface
+    surfaceVariant = Color(0xFFF5F5F5), // Light grey variant
+    onSurfaceVariant = Color(0xFF424242), // Strong grey text
+    outline = Color(0xFFE0E0E0) // Light outline
 )
 
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true, // Use Google Dynamic Color library by default
+    dynamicColor: Boolean = false, // Set to false to strictly enforce our custom theme colors
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

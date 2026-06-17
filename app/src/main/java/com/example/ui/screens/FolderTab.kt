@@ -1,40 +1,46 @@
 package com.example.ui.screens
 
+import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.example.VideoPlaybackActivity
 import com.example.data.db.MediaEntity
+import com.example.ui.adapters.BrowserItem
+import com.example.ui.adapters.FolderBrowserAdapter
+import com.example.ui.components.SkeletonListLoader
 import com.example.ui.theme.DarkPrimary
+import com.example.ui.viewmodel.FolderBrowserViewModel
+import com.example.ui.viewmodel.FolderBrowserViewModelFactory
 import com.example.ui.viewmodel.MediaViewModel
 
 @Composable
@@ -42,10 +48,26 @@ fun FolderTab(
     viewModel: MediaViewModel,
     modifier: Modifier = Modifier
 ) {
-    val foldersMap by viewModel.folders.collectAsState()
-    var expandedFolder by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val app = context.applicationContext as Application
     
+    // Initialize our decoupled lightweight ViewModel per screen requirement
+    val browserViewModel: FolderBrowserViewModel = viewModel(
+        factory = FolderBrowserViewModelFactory(app)
+    )
+
+    val currentFolder by browserViewModel.currentFolder.collectAsState()
+    val folders by browserViewModel.folders.collectAsState()
+    val folderItems by browserViewModel.folderItems.collectAsState()
+    val isLoadingFolders by browserViewModel.isLoadingFolders.collectAsState()
+    val isLoadingItems by browserViewModel.isLoadingItems.collectAsState()
+    val isAllItemsLoaded by browserViewModel.isAllItemsLoaded.collectAsState()
+
+    // Back button pops folder view before exiting
+    BackHandler(enabled = currentFolder != null) {
+        browserViewModel.navigateBack()
+    }
+
     // Standard Android documents SAF selection launcher
     val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -88,7 +110,6 @@ fun FolderTab(
                     )
                 }
                 
-                // Load files as queue list and start/play
                 if (pickedEntities.isNotEmpty()) {
                     viewModel.playSongAtIndex(pickedEntities, 0)
                 }
@@ -105,7 +126,7 @@ fun FolderTab(
             modifier = Modifier.padding(vertical = 8.dp)
         )
         Text(
-            text = "Browse physical files dynamically mapped by directory paths.",
+            text = "Highly optimized folder explorer utilizing native scrolling.",
             color = Color.Gray,
             fontSize = 12.sp,
             modifier = Modifier.padding(bottom = 12.dp)
@@ -157,135 +178,133 @@ fun FolderTab(
             }
         }
 
-        if (foldersMap.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(60.dp), tint = Color.Gray)
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("No folders found with media content.", color = Color.Gray, fontSize = 14.sp)
-                }
-            }
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 90.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(foldersMap.keys.toList()) { folderName ->
-                    val files = foldersMap[folderName] ?: emptyList()
-                    val isExpanded = expandedFolder == folderName
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                expandedFolder = if (isExpanded) null else folderName
-                            },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        shape = RoundedCornerShape(12.dp)
+        // Animated breadcrumb header bar inside directory browser
+        AnimatedVisibility(
+            visible = currentFolder != null,
+            enter = slideInVertically() + fadeIn(),
+            exit = slideOutVertically() + fadeOut()
+        ) {
+            currentFolder?.let { folder ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .clickable {
+                            browserViewModel.navigateBack()
+                        },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column {
-                            // Folder Header Row
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Folder,
-                                        contentDescription = "Folder",
-                                        tint = DarkPrimary,
-                                        modifier = Modifier.size(32.dp)
-                                    )
-                                    Column {
-                                        Text(
-                                            folderName,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            "${files.size} scanned elements",
-                                            color = Color.Gray,
-                                            fontSize = 12.sp
-                                        )
-                                    }
-                                }
-
-                                Icon(
-                                    if (isExpanded) Icons.Filled.ExpandMore else Icons.Filled.ChevronRight,
-                                    contentDescription = null,
-                                    tint = Color.Gray
-                                )
-                            }
-
-                            // Dynamic expanded file list
-                            AnimatedVisibility(
-                                visible = isExpanded,
-                                enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut()
-                            ) {
-                                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                                Column(
-                                    modifier = Modifier
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                                        .padding(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    files.forEachIndexed { fIdx, file ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .clickable {
-                                                    viewModel.playSongAtIndex(files, fIdx)
-                                                }
-                                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                Icon(
-                                                    if (file.isVideo) Icons.Filled.VideoFile else Icons.Filled.MusicNote,
-                                                    contentDescription = null,
-                                                    tint = if (file.isVideo) Color(0xFF00E5FF) else DarkPrimary,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Text(
-                                                    file.title,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 13.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-
-                                            Icon(
-                                                Icons.Filled.PlayCircle,
-                                                contentDescription = "Play",
-                                                tint = DarkPrimary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        Icon(
+                            Icons.Filled.ChevronLeft,
+                            contentDescription = "Back",
+                            tint = DarkPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Icon(
+                            Icons.Filled.FolderOpen,
+                            contentDescription = null,
+                            tint = DarkPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = folder.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Back to list",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
                     }
                 }
             }
         }
-    }
 
+        // Main List Content View Block
+        Box(modifier = Modifier.weight(1f)) {
+            val showFolders = currentFolder == null
+
+            if (showFolders && isLoadingFolders && folders.isEmpty()) {
+                SkeletonListLoader()
+            } else if (!showFolders && isLoadingItems && folderItems.isEmpty()) {
+                SkeletonListLoader()
+            } else if (showFolders && folders.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No media folders detected.", color = Color.Gray)
+                }
+            } else {
+                // High-performance programmatic RecyclerView bridging Compose ViewPort
+                AndroidView<RecyclerView>(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { viewContext ->
+                        val recyclerView = RecyclerView(viewContext).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            layoutManager = LinearLayoutManager(viewContext)
+                            setHasFixedSize(true)
+                        }
+
+                        val adapter = FolderBrowserAdapter(
+                            context = viewContext,
+                            onFolderClicked = { folder ->
+                                browserViewModel.enterFolder(folder)
+                            },
+                            onMediaClicked = { media, pList, index ->
+                                if (media.isVideo) {
+                                    // Handle Video start safely pausing audio to avoid interlocks
+                                    viewModel.pause()
+                                    viewModel.setCurrentlyPlayingVideo(media)
+                                    val intent = Intent(viewContext, VideoPlaybackActivity::class.java).apply {
+                                        putExtra("extra_media_path", media.path)
+                                        putExtra("extra_media_title", media.title)
+                                    }
+                                    viewContext.startActivity(intent)
+                                } else {
+                                    // Handle background audio PlaybackService queue load
+                                    viewModel.playSongAtIndex(pList, index)
+                                }
+                            }
+                        )
+                        recyclerView.adapter = adapter
+
+                        // Add infinite scroll pagination watcher
+                        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                                super.onScrolled(rv, dx, dy)
+                                if (currentFolder == null) return
+                                val lm = rv.layoutManager as LinearLayoutManager
+                                val totalItems = lm?.itemCount ?: 0
+                                val lastItem = lm?.findLastVisibleItemPosition() ?: 0
+                                if (totalItems <= lastItem + 6) {
+                                    browserViewModel.loadNextPageOfItems()
+                                }
+                            }
+                        })
+
+                        recyclerView
+                    },
+                    update = { recyclerView ->
+                        val adapter = recyclerView.adapter as? FolderBrowserAdapter ?: return@AndroidView
+                        val items = if (showFolders) {
+                            folders.map { BrowserItem.FolderItem(it) }
+                        } else {
+                            folderItems.map { BrowserItem.MediaFileItem(it) }
+                        }
+                        adapter.submitList(items)
+                    }
+                )
+            }
+        }
+    }
 }
