@@ -347,13 +347,17 @@ class MediaRepository(
                 if (dataCol != -1) {
                     while (cursor.moveToNext()) {
                         val filePath = cursor.getString(dataCol) ?: continue
-                        val parentFile = java.io.File(filePath).parentFile ?: continue
-                        val parentPath = parentFile.absolutePath
-                        val info = foldersMap[parentPath]
-                        if (info != null) {
-                            foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(true, info.third.second))
-                        } else {
-                            foldersMap[parentPath] = Triple(parentFile.name, 1, Pair(true, false))
+                        val idx = filePath.lastIndexOf('/')
+                        if (idx <= 0) continue
+                        val parentPath = filePath.substring(0, idx)
+                        val parentName = parentPath.substringAfterLast('/')
+                        if (parentName.isNotEmpty()) {
+                            val info = foldersMap[parentPath]
+                            if (info != null) {
+                                foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(true, info.third.second))
+                            } else {
+                                foldersMap[parentPath] = Triple(parentName, 1, Pair(true, false))
+                            }
                         }
                     }
                 }
@@ -376,13 +380,17 @@ class MediaRepository(
                 if (dataCol != -1) {
                     while (cursor.moveToNext()) {
                         val filePath = cursor.getString(dataCol) ?: continue
-                        val parentFile = java.io.File(filePath).parentFile ?: continue
-                        val parentPath = parentFile.absolutePath
-                        val info = foldersMap[parentPath]
-                        if (info != null) {
-                            foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(info.third.first, true))
-                        } else {
-                            foldersMap[parentPath] = Triple(parentFile.name, 1, Pair(false, true))
+                        val idx = filePath.lastIndexOf('/')
+                        if (idx <= 0) continue
+                        val parentPath = filePath.substring(0, idx)
+                        val parentName = parentPath.substringAfterLast('/')
+                        if (parentName.isNotEmpty()) {
+                            val info = foldersMap[parentPath]
+                            if (info != null) {
+                                foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(info.third.first, true))
+                            } else {
+                                foldersMap[parentPath] = Triple(parentName, 1, Pair(false, true))
+                            }
                         }
                     }
                 }
@@ -529,8 +537,8 @@ class MediaRepository(
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 audioProjection,
-                "_data LIKE ?",
-                arrayOf("$folderPath/%"),
+                "_data LIKE ? AND _data NOT LIKE ?",
+                arrayOf("$folderPath/%", "$folderPath/%/%"),
                 null
             )?.use { cursor ->
                 val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
@@ -543,9 +551,11 @@ class MediaRepository(
                 if (dataCol != -1 && titleCol != -1) {
                     while (cursor.moveToNext()) {
                         val path = cursor.getString(dataCol) ?: continue
-                        val parentFile = java.io.File(path).parentFile ?: continue
-                        if (parentFile.absolutePath == folderPath) {
-                            val title = cursor.getString(titleCol) ?: parentFile.nameIndex()
+                        val idx = path.lastIndexOf('/')
+                        val parentPath = if (idx > 0) path.substring(0, idx) else ""
+                        if (parentPath == folderPath) {
+                            val parentName = if (idx > 0) path.substring(path.lastIndexOf('/', idx - 1) + 1, idx) else ""
+                            val title = cursor.getString(titleCol) ?: if (parentName.isNotEmpty()) parentName else "Track"
                             val duration = if (durationCol != -1) cursor.getLong(durationCol) else 0L
                             val size = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
                             val album = if (albumCol != -1) cursor.getString(albumCol) ?: "Unknown Album" else "Unknown Album"
@@ -581,8 +591,8 @@ class MediaRepository(
             context.contentResolver.query(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 videoProjection,
-                "_data LIKE ?",
-                arrayOf("$folderPath/%"),
+                "_data LIKE ? AND _data NOT LIKE ?",
+                arrayOf("$folderPath/%", "$folderPath/%/%"),
                 null
             )?.use { cursor ->
                 val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
@@ -593,9 +603,11 @@ class MediaRepository(
                 if (dataCol != -1 && titleCol != -1) {
                     while (cursor.moveToNext()) {
                         val path = cursor.getString(dataCol) ?: continue
-                        val parentFile = java.io.File(path).parentFile ?: continue
-                        if (parentFile.absolutePath == folderPath) {
-                            val title = cursor.getString(titleCol) ?: parentFile.name
+                        val idx = path.lastIndexOf('/')
+                        val parentPath = if (idx > 0) path.substring(0, idx) else ""
+                        if (parentPath == folderPath) {
+                            val parentName = if (idx > 0) path.substring(path.lastIndexOf('/', idx - 1) + 1, idx) else ""
+                            val title = cursor.getString(titleCol) ?: if (parentName.isNotEmpty()) parentName else "Video"
                             val duration = if (durationCol != -1) cursor.getLong(durationCol) else 0L
                             val size = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
 

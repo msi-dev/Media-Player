@@ -725,7 +725,8 @@ fun SongListItem(
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee()
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = if (isCurrent) Modifier.basicMarquee() else Modifier
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(
@@ -737,9 +738,8 @@ fun SongListItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 1,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .basicMarquee()
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = if (isCurrent) Modifier.basicMarquee().weight(1f, fill = false) else Modifier.weight(1f, fill = false)
                     )
                     Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 10.sp)
                     Text(
@@ -1504,7 +1504,7 @@ fun RecentListItem(
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee()
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(
@@ -1516,9 +1516,8 @@ fun RecentListItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 1,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .basicMarquee()
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 10.sp)
                     Text(

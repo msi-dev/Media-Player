@@ -851,16 +851,16 @@ fun FullscreenPlayerSheet(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(vertical = 12.dp),
+                        .padding(vertical = if (dims.albumArtSize < 150.dp) 4.dp else 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(if (dims.albumArtSize < 150.dp) 8.dp else 16.dp)
                 ) {
                     CdStyleAlbumArt(
                         songPath = song.path,
                         songTitle = song.title,
                         isPlaying = isPlaying,
                         modifier = Modifier
-                            .size(if (dims.albumArtSize > 180.dp) 300.dp else 260.dp)
+                            .size(if (dims.albumArtSize > 180.dp) 280.dp else if (dims.albumArtSize < 150.dp) 160.dp else 210.dp)
                     )
 
                     // Dynamic wave spectrum visualization
@@ -868,7 +868,7 @@ fun FullscreenPlayerSheet(
                         viewModel = viewModel,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(64.dp)
+                            .height(if (dims.albumArtSize < 150.dp) 36.dp else 64.dp)
                             .padding(horizontal = 16.dp)
                     )
                 }
@@ -882,7 +882,7 @@ fun FullscreenPlayerSheet(
                     Text(
                         text = song.title,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 22.sp,
+                        fontSize = if (dims.albumArtSize < 150.dp) 18.sp else 22.sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
                         textAlign = TextAlign.Center
@@ -890,19 +890,19 @@ fun FullscreenPlayerSheet(
                     Text(
                         text = song.artist,
                         color = DarkPrimary,
-                        fontSize = 15.sp,
+                        fontSize = if (dims.albumArtSize < 150.dp) 13.sp else 15.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
                     Text(
                         text = "${song.album} (Support APE/FLAC High Fidelity decode)",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
+                        fontSize = if (dims.albumArtSize < 150.dp) 9.sp else 11.sp,
                         textAlign = TextAlign.Center
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(if (dims.albumArtSize < 150.dp) 6.dp else 16.dp))
 
                 // Timeline Scrubbing Slider block
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -933,7 +933,7 @@ fun FullscreenPlayerSheet(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(if (dims.albumArtSize < 150.dp) 4.dp else 12.dp))
 
                 // Professional Audio Controller Deck
                 Row(
@@ -954,33 +954,33 @@ fun FullscreenPlayerSheet(
                     // Skip previous (enlarged)
                     IconButton(
                         onClick = { viewModel.playPrevious() },
-                        modifier = Modifier.size(64.dp)
+                        modifier = Modifier.size(if (dims.albumArtSize < 150.dp) 48.dp else 64.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.SkipPrevious,
                             contentDescription = "Previous",
                             tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(44.dp)
+                            modifier = Modifier.size(if (dims.albumArtSize < 150.dp) 32.dp else 44.dp)
                         )
                     }
 
                     // Core play pause trigger (enlarged with halo highlight)
                     Box(
                         modifier = Modifier
-                            .size(110.dp)
+                            .size(if (dims.albumArtSize < 150.dp) 82.dp else 110.dp)
                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), shape = CircleShape)
-                            .padding(4.dp),
+                            .padding(if (dims.albumArtSize < 150.dp) 2.dp else 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         IconButton(
                             onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
-                            modifier = Modifier.size(96.dp)
+                            modifier = Modifier.size(if (dims.albumArtSize < 150.dp) 72.dp else 96.dp)
                         ) {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                                 contentDescription = "PlayPause",
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(90.dp)
+                                modifier = Modifier.size(if (dims.albumArtSize < 150.dp) 64.dp else 90.dp)
                             )
                         }
                     }
@@ -988,13 +988,13 @@ fun FullscreenPlayerSheet(
                     // Skip next (enlarged)
                     IconButton(
                         onClick = { viewModel.playNext() },
-                        modifier = Modifier.size(64.dp)
+                        modifier = Modifier.size(if (dims.albumArtSize < 150.dp) 48.dp else 64.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.SkipNext,
                             contentDescription = "Next",
                             tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(44.dp)
+                            modifier = Modifier.size(if (dims.albumArtSize < 150.dp) 32.dp else 44.dp)
                         )
                     }
 

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.util.Log
 import android.app.AppOpsManager
 import android.os.Process
 import android.provider.Settings
@@ -246,9 +247,17 @@ fun VideoPlayerScreen(
         player.play()
 
         onDispose {
-            viewModel.updateLastPlayedProgress(video.path, player.currentPosition)
+            try {
+                viewModel.updateLastPlayedProgress(video.path, player.currentPosition)
+            } catch (e: Exception) {
+                Log.e("VideoPlayer", "Error saving final playback progress on dispose: ${e.message}")
+            }
             if (!viewModel.isVideoBackgroundPlayEnabled.value) {
-                player.stop()
+                try {
+                    player.stop()
+                } catch (e: Exception) {
+                    Log.e("VideoPlayer", "Error stopping player on dispose: ${e.message}")
+                }
             }
         }
     }
@@ -256,8 +265,12 @@ fun VideoPlayerScreen(
     // Background saver tick loop
     LaunchedEffect(video.path) {
         while (true) {
-            if (player.isPlaying) {
-                viewModel.updateLastPlayedProgress(video.path, player.currentPosition)
+            try {
+                if (player.isPlaying) {
+                    viewModel.updateLastPlayedProgress(video.path, player.currentPosition)
+                }
+            } catch (e: Exception) {
+                break
             }
             delay(1000)
         }
@@ -267,9 +280,13 @@ fun VideoPlayerScreen(
     LaunchedEffect(abRepeatMode, abRepeatStart, abRepeatEnd) {
         while (abRepeatMode == 2) {
             delay(100)
-            val currentPos = player.currentPosition
-            if (currentPos < abRepeatStart || currentPos >= abRepeatEnd) {
-                player.seekTo(abRepeatStart)
+            try {
+                val currentPos = player.currentPosition
+                if (currentPos < abRepeatStart || currentPos >= abRepeatEnd) {
+                    player.seekTo(abRepeatStart)
+                }
+            } catch (e: Exception) {
+                break
             }
         }
     }
@@ -301,7 +318,11 @@ fun VideoPlayerScreen(
 
         LaunchedEffect(isControlsVisible) {
             while (isControlsVisible) {
-                trackProgressPos = player.currentPosition
+                try {
+                    trackProgressPos = player.currentPosition
+                } catch (e: Exception) {
+                    break
+                }
                 delay(250)
             }
         }

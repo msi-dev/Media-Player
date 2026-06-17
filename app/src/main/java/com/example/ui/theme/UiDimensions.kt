@@ -109,9 +109,10 @@ fun ProvideResponsiveDimensions(content: @Composable () -> Unit) {
             )
         }
         else -> {
-            // Compact / Modern Phones (FHD, QHD, etc.): calculate factor based on small screen size and low DPI
+            // Compact / Modern Phones (FHD, QHD, etc.): calculate factor based on small screen size, height and low DPI
+            val screenHeight = configuration.screenHeightDp
             val scaleFactor = when {
-                screenWidth < 360 || density < 2.2f -> 0.82f // Low DPI or extremely compact device
+                screenWidth < 360 || screenHeight < 680 || density < 2.2f -> 0.76f // Low DPI or extremely compact/short device
                 density >= 3.5f -> 1.05f // High DPI/flagship device
                 else -> 1.0f // Standard Mobile DPI
             }
