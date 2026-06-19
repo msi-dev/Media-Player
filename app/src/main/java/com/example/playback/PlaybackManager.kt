@@ -17,6 +17,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.example.MediaPlayerApp
+import com.example.service.MusicPlayerService
 import com.example.data.db.MediaEntity
 import com.example.data.repository.MediaRepository
 import kotlinx.coroutines.CoroutineScope
@@ -59,6 +60,16 @@ class PlaybackManager(private val context: Context) {
             .putBoolean("persisted_shuffle_enabled", _isShuffleEnabled.value)
             .putInt("persisted_repeat_mode", _repeatMode.value)
             .apply()
+
+        // Persist to Room SQLite Database
+        scope.launch(Dispatchers.IO) {
+            try {
+                repository.saveSetting("persisted_shuffle_enabled", _isShuffleEnabled.value.toString())
+                repository.saveSetting("persisted_repeat_mode", _repeatMode.value.toString())
+            } catch (e: Exception) {
+                Log.e(TAG, "Uncaught database exception setting save: ${e.message}")
+            }
+        }
     }
 
     // Base Media3 ExoPlayer
@@ -78,6 +89,9 @@ class PlaybackManager(private val context: Context) {
 
     private val _currentlyPlayingVideo = MutableStateFlow<MediaEntity?>(null)
     val currentlyPlayingVideo: StateFlow<MediaEntity?> = _currentlyPlayingVideo.asStateFlow()
+
+    // Support separate Video Player Service binding
+    var activeVideoPlayer: androidx.media3.exoplayer.ExoPlayer? = null
 
     private val _isVideoBackgroundPlayEnabled = MutableStateFlow(false)
     val isVideoBackgroundPlayEnabled: StateFlow<Boolean> = _isVideoBackgroundPlayEnabled.asStateFlow()
@@ -122,8 +136,8 @@ class PlaybackManager(private val context: Context) {
     private val _eqEnabled = MutableStateFlow(false)
     val eqEnabled = _eqEnabled.asStateFlow()
 
-    // Equalizer 5 band levels (-15dB to +15dB, stored as Int -15 to +15)
-    private val _eqBands = MutableStateFlow(listOf(0, 0, 0, 0, 0))
+    // Equalizer 10 band levels (-15dB to +15dB, stored as Int -15 to +15)
+    private val _eqBands = MutableStateFlow(listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
     val eqBands = _eqBands.asStateFlow()
 
     private val _bassBoostLevel = MutableStateFlow(0) // 0 to 1000
@@ -254,7 +268,12 @@ class PlaybackManager(private val context: Context) {
         try {
             val sessionId = player.audioSessionId
             if (sessionId != 0) {
-                nativeEqualizer = Equalizer(0, sessionId).apply { enabled = _eqEnabled.value }
+                nativeEqualizer = Equalizer(0, sessionId).apply { 
+                    enabled = _eqEnabled.value 
+                    if (enabled) {
+                        applyBandsToHardware(this, _eqBands.value)
+                    }
+                }
                 nativeBassBoost = BassBoost(0, sessionId).apply { enabled = _bassBoostLevel.value > 0 }
                 nativeVirtualizer = Virtualizer(0, sessionId).apply { enabled = _virtualizerLevel.value > 0 }
                 nativeLoudness = LoudnessEnhancer(sessionId).apply { enabled = _loudnessEnhancerGain.value > 0 }
@@ -322,7 +341,7 @@ class PlaybackManager(private val context: Context) {
 
     fun play() {
         try {
-            val serviceIntent = Intent(context, MediaPlaybackService::class.java)
+            val serviceIntent = Intent(context, MusicPlayerService::class.java)
             androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed startService in PlaybackManager.play: ${e.message}")
@@ -405,14 +424,19 @@ class PlaybackManager(private val context: Context) {
     fun toggleEqualizer(enabled: Boolean) {
         _eqEnabled.value = enabled
         try {
-            nativeEqualizer?.enabled = enabled
+            nativeEqualizer?.let { eq ->
+                eq.enabled = enabled
+                if (enabled) {
+                    applyBandsToHardware(eq, _eqBands.value)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Equalizer toggle fail: ${e.message}")
         }
     }
 
     fun setEqualizerBand(band: Int, value: Int) {
-        if (band < 0 || band >= 5) return
+        if (band < 0 || band >= 10) return
         val current = _eqBands.value.toMutableList()
         current[band] = value
         _eqBands.value = current
@@ -420,34 +444,62 @@ class PlaybackManager(private val context: Context) {
         try {
             nativeEqualizer?.let { eq ->
                 if (eq.enabled) {
-                    val nativeBand = band.toShort()
-                    // Convert -15..+15 slider range to millibels (e.g. -1500mB to +1500mB)
-                    val valueMillibels = (value * 100).toShort()
-                    eq.setBandLevel(nativeBand, valueMillibels)
-                    Log.i(TAG, "Set Equalizer Band $band to $valueMillibels mB")
+                    applyBandsToHardware(eq, current)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error adjusting Equalizer Hardware Band $band: ${e.message}")
+            Log.e(TAG, "Error adjusting Equalizer Hardware: ${e.message}")
         }
     }
 
     fun setEqualizerPreset(levels: List<Int>) {
-        if (levels.size != 5) return
+        if (levels.size != 10) return
         _eqBands.value = levels
         try {
             nativeEqualizer?.let { eq ->
                 if (eq.enabled) {
-                    for (i in 0 until 5) {
-                        val nativeBand = i.toShort()
-                        val valueMillibels = (levels[i] * 100).toShort()
-                        eq.setBandLevel(nativeBand, valueMillibels)
-                    }
-                    Log.i(TAG, "Equalizer preset applied: $levels")
+                    applyBandsToHardware(eq, levels)
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting equalizer preset: ${e.message}")
+        }
+    }
+
+    private fun applyBandsToHardware(eq: Equalizer, virtualBands: List<Int>) {
+        try {
+            val numHardwareBands = eq.numberOfBands.toInt()
+            for (i in 0 until numHardwareBands) {
+                val centerHz = eq.getCenterFreq(i.toShort()) / 1000.0
+                // Map the hardware center frequency to a log scale position over our 10 virtual bands:
+                // virtual frequencies: 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000
+                // Let's compute octave relative to 31.25 Hz:
+                val octave = kotlin.math.log2(centerHz / 31.25)
+                // Linear interpolation:
+                val floatLevel = if (octave <= 0.0) {
+                    virtualBands[0].toFloat()
+                } else if (octave >= 9.0) {
+                    virtualBands[9].toFloat()
+                } else {
+                    val idx = octave.toInt()
+                    val fraction = (octave - idx).toFloat()
+                    val v1 = virtualBands[idx].toFloat()
+                    val v2 = virtualBands[idx + 1].toFloat()
+                    v1 + fraction * (v2 - v1)
+                }
+                
+                // Get hardware range or default to [-1500, 1500] millibels
+                val range = eq.bandLevelRange
+                val minLevel = range?.get(0) ?: -1500
+                val maxLevel = range?.get(1) ?: 1500
+                
+                // Convert -15..+15 range to millibels (e.g. level * 100) and clamp
+                val millibels = (floatLevel * 100f).toInt().coerceIn(minLevel.toInt(), maxLevel.toInt()).toShort()
+                eq.setBandLevel(i.toShort(), millibels)
+            }
+            Log.i(TAG, "Successfully mapped 10 virtual bands to $numHardwareBands hardware equalizer bands.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed applying virtual bands to hardware: ${e.message}")
         }
     }
 

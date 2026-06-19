@@ -233,77 +233,94 @@ fun FolderTab(
         Box(modifier = Modifier.weight(1f)) {
             val showFolders = currentFolder == null
 
-            if (showFolders && isLoadingFolders && folders.isEmpty()) {
-                SkeletonListLoader()
-            } else if (!showFolders && isLoadingItems && folderItems.isEmpty()) {
-                SkeletonListLoader()
-            } else if (showFolders && folders.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No media folders detected.", color = Color.Gray)
-                }
-            } else {
-                // High-performance programmatic RecyclerView bridging Compose ViewPort
-                AndroidView<RecyclerView>(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { viewContext ->
-                        val recyclerView = RecyclerView(viewContext).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            layoutManager = LinearLayoutManager(viewContext)
-                            setHasFixedSize(true)
-                        }
-
-                        val adapter = FolderBrowserAdapter(
-                            context = viewContext,
-                            onFolderClicked = { folder ->
-                                browserViewModel.enterFolder(folder)
-                            },
-                            onMediaClicked = { media, pList, index ->
-                                if (media.isVideo) {
-                                    // Handle Video start safely pausing audio to avoid interlocks
-                                    viewModel.pause()
-                                    viewModel.setCurrentlyPlayingVideo(media)
-                                    val intent = Intent(viewContext, VideoPlaybackActivity::class.java).apply {
-                                        putExtra("extra_media_path", media.path)
-                                        putExtra("extra_media_title", media.title)
-                                    }
-                                    viewContext.startActivity(intent)
-                                } else {
-                                    // Handle background audio PlaybackService queue load
-                                    viewModel.playSongAtIndex(pList, index)
-                                }
-                            }
-                        )
-                        recyclerView.adapter = adapter
-
-                        // Add infinite scroll pagination watcher
-                        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                                super.onScrolled(rv, dx, dy)
-                                if (currentFolder == null) return
-                                val lm = rv.layoutManager as LinearLayoutManager
-                                val totalItems = lm?.itemCount ?: 0
-                                val lastItem = lm?.findLastVisibleItemPosition() ?: 0
-                                if (totalItems <= lastItem + 6) {
-                                    browserViewModel.loadNextPageOfItems()
-                                }
-                            }
-                        })
-
-                        recyclerView
-                    },
-                    update = { recyclerView ->
-                        val adapter = recyclerView.adapter as? FolderBrowserAdapter ?: return@AndroidView
-                        val items = if (showFolders) {
-                            folders.map { BrowserItem.FolderItem(it) }
-                        } else {
-                            folderItems.map { BrowserItem.MediaFileItem(it) }
-                        }
-                        adapter.submitList(items)
+            AnimatedContent(
+                targetState = showFolders,
+                transitionSpec = {
+                    if (!targetState) {
+                        // Forward transition: entering folder (folders -> items)
+                        (slideInHorizontally(initialOffsetX = { it }) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)))
+                            .togetherWith(slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut(animationSpec = androidx.compose.animation.core.tween(150)))
+                    } else {
+                        // Backward transition: returning to folders (items -> folders)
+                        (slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)))
+                            .togetherWith(slideOutHorizontally(targetOffsetX = { it }) + fadeOut(animationSpec = androidx.compose.animation.core.tween(150)))
                     }
-                )
+                },
+                label = "FolderTransition",
+                modifier = Modifier.fillMaxSize()
+            ) { targetShowFolders ->
+                if (targetShowFolders && isLoadingFolders && folders.isEmpty()) {
+                    SkeletonListLoader()
+                } else if (!targetShowFolders && isLoadingItems && folderItems.isEmpty()) {
+                    SkeletonListLoader()
+                } else if (targetShowFolders && folders.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No media folders detected.", color = Color.Gray)
+                    }
+                } else {
+                    // High-performance programmatic RecyclerView bridging Compose ViewPort
+                    AndroidView<RecyclerView>(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { viewContext ->
+                            val recyclerView = RecyclerView(viewContext).apply {
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                layoutManager = LinearLayoutManager(viewContext)
+                                setHasFixedSize(true)
+                            }
+
+                            val adapter = FolderBrowserAdapter(
+                                context = viewContext,
+                                onFolderClicked = { folder ->
+                                    browserViewModel.enterFolder(folder)
+                                },
+                                onMediaClicked = { media, pList, index ->
+                                    if (media.isVideo) {
+                                        // Handle Video start safely pausing audio to avoid interlocks
+                                        viewModel.pause()
+                                        viewModel.setCurrentlyPlayingVideo(media)
+                                        val intent = Intent(viewContext, VideoPlaybackActivity::class.java).apply {
+                                            putExtra("extra_media_path", media.path)
+                                            putExtra("extra_media_title", media.title)
+                                        }
+                                        viewContext.startActivity(intent)
+                                    } else {
+                                        // Handle background audio PlaybackService queue load
+                                        viewModel.playSongAtIndex(pList, index)
+                                    }
+                                }
+                            )
+                            recyclerView.adapter = adapter
+
+                            // Add infinite scroll pagination watcher
+                            recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                                override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                                    super.onScrolled(rv, dx, dy)
+                                    if (targetShowFolders) return
+                                    val lm = rv.layoutManager as LinearLayoutManager
+                                    val totalItems = lm?.itemCount ?: 0
+                                    val lastItem = lm?.findLastVisibleItemPosition() ?: 0
+                                    if (totalItems <= lastItem + 6) {
+                                        browserViewModel.loadNextPageOfItems()
+                                    }
+                                }
+                            })
+
+                            recyclerView
+                        },
+                        update = { recyclerView ->
+                            val adapter = recyclerView.adapter as? FolderBrowserAdapter ?: return@AndroidView
+                            val items = if (targetShowFolders) {
+                                folders.map { BrowserItem.FolderItem(it) }
+                            } else {
+                                folderItems.map { BrowserItem.MediaFileItem(it) }
+                            }
+                            adapter.submitList(items)
+                        }
+                    )
+                }
             }
         }
     }

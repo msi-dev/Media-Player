@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -9,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.MediaPlayerApp
 import com.example.data.db.MediaEntity
 import com.example.data.db.PlaylistEntity
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.example.data.repository.MediaRepository
 import com.example.data.repository.HiddenFolderRepository
 import com.example.playback.PlaybackManager
@@ -21,6 +24,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import kotlinx.coroutines.flow.Flow
 
 class MediaViewModel(
     application: Application,
@@ -32,7 +40,12 @@ class MediaViewModel(
     private val TAG = "MediaViewModel"
 
     private val _isScanning = MutableStateFlow(false)
-    val isScanning = _isScanning.asStateFlow()
+    val isScanning = combine(
+        _isScanning,
+        com.example.scanner.MediaScannerController.isScanning
+    ) { local, service ->
+        local || service
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     // Hidden Folders Flow
     val hiddenFolders = hiddenFolderRepository.allHiddenFolders.stateIn(
@@ -72,6 +85,26 @@ class MediaViewModel(
         if (query.isEmpty()) videos
         else videos.filter { it.title.contains(query, ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pagedAudio: Flow<PagingData<MediaEntity>> = Pager(
+        config = PagingConfig(
+            pageSize = 30,
+            enablePlaceholders = false,
+            initialLoadSize = 30
+        )
+    ) {
+        repository.getAudioPagingSource()
+    }.flow.cachedIn(viewModelScope)
+
+    val pagedVideos: Flow<PagingData<MediaEntity>> = Pager(
+        config = PagingConfig(
+            pageSize = 30,
+            enablePlaceholders = false,
+            initialLoadSize = 30
+        )
+    ) {
+        repository.getVideosPagingSource()
+    }.flow.cachedIn(viewModelScope)
 
     // Grouping calculations for library sections
     val albums = allAudio.combine(allAudio) { songs, _ ->
@@ -196,6 +229,33 @@ class MediaViewModel(
     )
     val isDarkTheme = _isDarkTheme.asStateFlow()
 
+    // Preferences DataStore Integration
+    val settingsDataStore = (application as MediaPlayerApp).settingsDataStore
+
+    val dynamicColorEnabled = settingsDataStore.dynamicColorEnabled.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), false
+    )
+
+    val isDarkThemePrefSetting = settingsDataStore.isDarkTheme.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), "SYSTEM"
+    )
+
+    val waveformStylePref = settingsDataStore.waveformStyle.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), "Wave"
+    )
+
+    val waveformColorPref = settingsDataStore.waveformColorType.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), "Accent"
+    )
+
+    val equalizerPresetPref = settingsDataStore.equalizerPreset.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), "Normal"
+    )
+
+    val scanAndroidFolderPref = settingsDataStore.scanAndroidFolder.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), false
+    )
+
     private val _gestureSensitivity = MutableStateFlow(prefs.getFloat("gesture_sensitivity", 1.0f))
     val gestureSensitivity = _gestureSensitivity.asStateFlow()
 
@@ -284,18 +344,13 @@ class MediaViewModel(
     val virtualizer = playbackManager.virtualizerLevel
     val loudnessEnhancer = playbackManager.loudnessEnhancerGain
 
+    private val _customPresets = MutableStateFlow<Map<String, List<Int>>>(emptyMap())
+    val customPresets = _customPresets.asStateFlow()
+
     init {
-        // Automatically scan files on creation (smart cached startup loads Room instantly)
-        viewModelScope.launch {
-            _isScanning.value = true
-            try {
-                repository.scanLocalMedia(forceScan = false)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error scanning local media on init: ${e.message}")
-            } finally {
-                _isScanning.value = false
-            }
-        }
+        loadCustomPresets()
+        // Automatically scan files once on creation via our async MediaScanner Service
+        initScanMedia()
 
         // Persisted state and Smart Resume startup automation
         viewModelScope.launch {
@@ -308,8 +363,12 @@ class MediaViewModel(
                     val savedSongPath = statePrefs.getString("persisted_current_song_path", "") ?: ""
                     val savedPos = statePrefs.getLong("persisted_current_position", 0L)
                     val savedQueueStr = statePrefs.getString("persisted_playback_queue", "") ?: ""
-                    val savedShuffle = statePrefs.getBoolean("persisted_shuffle_enabled", false)
-                    val savedRepeat = statePrefs.getInt("persisted_repeat_mode", 0)
+                    
+                    val dbShuffleVal = repository.getSettingValue("persisted_shuffle_enabled")
+                    val dbRepeatVal = repository.getSettingValue("persisted_repeat_mode")
+                    
+                    val savedShuffle = dbShuffleVal?.toBoolean() ?: statePrefs.getBoolean("persisted_shuffle_enabled", false)
+                    val savedRepeat = dbRepeatVal?.toIntOrNull() ?: statePrefs.getInt("persisted_repeat_mode", 0)
 
                     if (savedQueueStr.isNotEmpty()) {
                         val savedPaths = savedQueueStr.split(",").filter { it.isNotEmpty() }
@@ -383,15 +442,19 @@ class MediaViewModel(
     }
 
     fun forceScanMedia() {
-        viewModelScope.launch {
+        _isScanning.value = true
+        com.example.scanner.MediaScannerService.startScan(getApplication(), forceScan = true)
+        _isScanning.value = false
+    }
+
+    private var hasScannedOnStartup = false
+
+    fun initScanMedia() {
+        if (!hasScannedOnStartup) {
+            hasScannedOnStartup = true
             _isScanning.value = true
-            try {
-                repository.scanLocalMedia(forceScan = true)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error forcing media scan: ${e.message}")
-            } finally {
-                _isScanning.value = false
-            }
+            com.example.scanner.MediaScannerService.startScan(getApplication(), forceScan = false)
+            _isScanning.value = false
         }
     }
 
@@ -475,9 +538,22 @@ class MediaViewModel(
         }
     }
 
+    fun createPlaylistAndAddSong(name: String, songPath: String) {
+        viewModelScope.launch {
+            val playlistId = repository.createPlaylist(name)
+            repository.addSongToPlaylist(playlistId, songPath)
+        }
+    }
+
     fun deletePlaylist(id: Long) {
         viewModelScope.launch {
             repository.deletePlaylist(id)
+        }
+    }
+
+    fun renamePlaylist(id: Long, newName: String) {
+        viewModelScope.launch {
+            repository.renamePlaylist(id, newName)
         }
     }
 
@@ -520,6 +596,37 @@ class MediaViewModel(
     fun setVirtualizer(level: Int) = playbackManager.setVirtualizer(level)
     fun setLoudnessEnhancer(gain: Int) = playbackManager.setLoudnessEnhancer(gain)
 
+    fun loadCustomPresets() {
+        val customPrefs = getApplication<Application>().getSharedPreferences("equalizer_custom_presets", android.content.Context.MODE_PRIVATE)
+        val map = mutableMapOf<String, List<Int>>()
+        customPrefs.all.forEach { (key, value) ->
+            if (value is String) {
+                try {
+                    val list = value.split(",").map { it.toInt() }
+                    if (list.size == 10) {
+                        map[key] = list
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading custom preset $key: ${e.message}")
+                }
+            }
+        }
+        _customPresets.value = map
+    }
+
+    fun saveCustomPreset(name: String, bands: List<Int>) {
+        if (bands.size != 10) return
+        val customPrefs = getApplication<Application>().getSharedPreferences("equalizer_custom_presets", android.content.Context.MODE_PRIVATE)
+        customPrefs.edit().putString(name, bands.joinToString(",")).apply()
+        loadCustomPresets()
+    }
+
+    fun deleteCustomPreset(name: String) {
+        val customPrefs = getApplication<Application>().getSharedPreferences("equalizer_custom_presets", android.content.Context.MODE_PRIVATE)
+        customPrefs.edit().remove(name).apply()
+        loadCustomPresets()
+    }
+
     // Dark/Light toggle
     fun setThemePref(themeMode: Boolean?) {
         _isDarkTheme.value = themeMode
@@ -528,6 +635,61 @@ class MediaViewModel(
         } else {
             prefs.edit().remove("is_dark_theme").apply()
         }
+    }
+
+    // New Preferences DataStore mutators
+    fun setDynamicColorEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsDataStore.setDynamicColorEnabled(enabled)
+        }
+    }
+
+    fun setIsDarkThemePrefSetting(theme: String) {
+        viewModelScope.launch {
+            settingsDataStore.setDarkTheme(theme)
+            when (theme) {
+                "DARK" -> setThemePref(true)
+                "LIGHT" -> setThemePref(false)
+                else -> setThemePref(null)
+            }
+        }
+    }
+
+    fun setWaveformStyle(style: String) {
+        viewModelScope.launch {
+            settingsDataStore.setWaveformStyle(style)
+        }
+    }
+
+    fun setWaveformColorType(colorType: String) {
+        viewModelScope.launch {
+            settingsDataStore.setWaveformColorType(colorType)
+        }
+    }
+
+    fun setEqualizerPresetSetting(presetName: String) {
+        viewModelScope.launch {
+            settingsDataStore.setEqualizerPreset(presetName)
+            applyEqualizerPreset(presetName)
+        }
+    }
+
+    fun setScanAndroidFolderSetting(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsDataStore.setScanAndroidFolder(enabled)
+            forceScanMedia()
+        }
+    }
+
+    fun applyEqualizerPreset(preset: String) {
+        val bands = when (preset) {
+            "Classic" -> listOf(4, 3, 2, 2, -1, -1, 0, 2, 3, 4)
+            "Bass Boost" -> listOf(8, 6, 4, 2, 0, 0, 0, 0, 0, 0)
+            "Vocal" -> listOf(-3, -2, -1, 1, 3, 4, 3, 2, 1, 0)
+            "Acoustic" -> listOf(4, 3, 2, 0, 1, 1, 2, 3, 2, 1)
+            else -> listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0) // Flat
+        }
+        setEqualizerPreset(bands)
     }
 
     fun setGestureSensitivity(value: Float) {
@@ -594,6 +756,12 @@ class MediaViewModel(
         }
     }
 
+    fun updateMediaMetadata(path: String, title: String, artist: String, album: String, genre: String, year: String) {
+        viewModelScope.launch {
+            repository.updateMediaMetadata(path, title, artist, album, genre, year)
+        }
+    }
+
     // Hidden Folders settings controllers
     fun addHiddenFolder(path: String) {
         viewModelScope.launch {
@@ -624,6 +792,57 @@ class MediaViewModel(
         viewModelScope.launch {
             forceScanMedia()
             Log.i(TAG, "Database maintenance completed successfully.")
+        }
+    }
+
+    fun importSelectedFile(uri: Uri, isVideo: Boolean) {
+        viewModelScope.launch {
+            try {
+                getApplication<Application>().contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to take persistable URI permission: ${e.message}")
+            }
+
+            val contentResolver = getApplication<Application>().contentResolver
+            var displayName = ""
+            var size = 0L
+            val projection = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
+            try {
+                contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIndex != -1) displayName = cursor.getString(nameIndex) ?: ""
+                        if (sizeIndex != -1) size = cursor.getLong(sizeIndex)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error resolving selected document details: ${e.message}")
+            }
+
+            if (displayName.isEmpty()) {
+                displayName = uri.lastPathSegment ?: "Imported File"
+            }
+
+            val cleanTitle = if (displayName.contains(".")) displayName.substringBeforeLast(".") else displayName
+
+            val mediaEntity = MediaEntity(
+                path = uri.toString(),
+                title = cleanTitle,
+                duration = 0L,
+                size = size,
+                album = if (isVideo) "Imported Video" else "Imported Audio",
+                artist = "Local File",
+                genre = "Imported",
+                year = "",
+                isVideo = isVideo
+            )
+
+            repository.insertMedia(mediaEntity)
+            playMediaDirectly(mediaEntity)
         }
     }
 

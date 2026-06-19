@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.example.ui.theme.DarkPrimary
 
 @Composable
@@ -22,6 +24,7 @@ fun CustomAospSeekBar(
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
 
@@ -39,6 +42,7 @@ fun CustomAospSeekBar(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         isDragging = true
                         val widthPx = size.width.toFloat()
                         val newProgress = (offset.x / widthPx).coerceIn(0f, 1f)
@@ -47,12 +51,14 @@ fun CustomAospSeekBar(
                         tryAwaitRelease()
                         isDragging = false
                         currentOnValueChangeFinished()
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     }
                 )
             }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { offset ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         isDragging = true
                         val widthPx = size.width.toFloat()
                         dragProgress = (offset.x / widthPx).coerceIn(0f, 1f)
@@ -61,6 +67,7 @@ fun CustomAospSeekBar(
                     onDragEnd = {
                         isDragging = false
                         currentOnValueChangeFinished()
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     },
                     onDragCancel = {
                         isDragging = false
@@ -68,7 +75,16 @@ fun CustomAospSeekBar(
                     onDrag = { change, _ ->
                         change.consume()
                         val widthPx = size.width.toFloat()
-                        dragProgress = (change.position.x / widthPx).coerceIn(0f, 1f)
+                        val nextProgress = (change.position.x / widthPx).coerceIn(0f, 1f)
+                        
+                        // Subtle tick feedback every ~2% change
+                        val oldStep = (dragProgress * 50).toInt()
+                        val newStep = (nextProgress * 50).toInt()
+                        if (oldStep != newStep) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                        
+                        dragProgress = nextProgress
                         currentOnValueChange(dragProgress)
                     }
                 )

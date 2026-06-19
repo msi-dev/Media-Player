@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.data.db.MediaDatabase
 import com.example.data.repository.MediaRepository
 import com.example.data.repository.HiddenFolderRepository
+import com.example.data.settings.SettingsDataStore
 import com.example.playback.PlaybackManager
 
 class MediaPlayerApp : Application() {
@@ -23,9 +24,15 @@ class MediaPlayerApp : Application() {
     lateinit var playbackManager: PlaybackManager
         private set
 
+    lateinit var settingsDataStore: SettingsDataStore
+        private set
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "Initializing Media Player Application container...")
+        
+        // Settings DataStore
+        settingsDataStore = SettingsDataStore(this)
         
         // 1. Initializing Room database instance
         database = MediaDatabase.getDatabase(this)

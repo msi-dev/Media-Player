@@ -19,16 +19,22 @@ object NativeMediaBridge {
 
     /**
      * Natively extracts the format extension from the file path.
+     * PERFORMANCE OPTIMIZATION: Bypasses native calls entirely for standard file extensions
+     * to prevent slow disk I/O or NDK thread freezing during large folder indexing.
      */
     fun detectFormat(filePath: String): String {
+        val extension = fallbackDetectFormat(filePath)
+        if (fallbackIsFormatSupported(extension)) {
+            return extension
+        }
         return if (isNativeLibraryLoaded) {
             try {
                 detectFormatNative(filePath)
             } catch (e: Exception) {
-                fallbackDetectFormat(filePath)
+                extension
             }
         } else {
-            fallbackDetectFormat(filePath)
+            extension
         }
     }
 

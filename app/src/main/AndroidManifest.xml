@@ -32,9 +32,9 @@
         android:theme="@style/Theme.MyApplication"
         tools:ignore="MissingApplicationIcon">
 
-        <!-- Background session coordination service -->
+        <!-- Music foreground/background player service -->
         <service
-            android:name=".playback.MediaPlaybackService"
+            android:name=".service.MusicPlayerService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"
             tools:targetApi="34">
@@ -42,6 +42,22 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Video background player service -->
+        <service
+            android:name=".service.VideoPlayerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"
+            tools:targetApi="34">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Async coroutine background Media File Finder / Scanner service -->
+        <service
+            android:name=".scanner.MediaScannerService"
+            android:exported="false" />
 
         <activity
             android:name=".MainActivity"

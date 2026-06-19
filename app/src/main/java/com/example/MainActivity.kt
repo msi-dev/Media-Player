@@ -15,7 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.ViewModelProvider
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
-import com.example.playback.MediaPlaybackService
+import com.example.service.MusicPlayerService
 import com.example.ui.screens.MainScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ProvideResponsiveDimensions
@@ -37,8 +37,8 @@ class MainActivity : ComponentActivity() {
         val notifGranted = permissions[Manifest.permission.POST_NOTIFICATIONS] == true
 
         Log.i(TAG, "Storage privileges updated: Audio Granted = $audioGranted, Video Granted = $videoGranted, Mic/Record = $recordAudioGranted, Notification Granted = $notifGranted")
-        // Force scan database files following privileges updates
-        viewModel.forceScanMedia()
+        // Run safe, single-time background media initialization scan
+        viewModel.initScanMedia()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,9 +53,9 @@ class MainActivity : ComponentActivity() {
 
         // 2. Trigger active Media3 Background Service intents
         try {
-            val serviceIntent = Intent(this, MediaPlaybackService::class.java)
+            val serviceIntent = Intent(this, MusicPlayerService::class.java)
             startService(serviceIntent)
-            Log.i(TAG, "ExoPlayer MediaPlaybackService command queued.")
+            Log.i(TAG, "ExoPlayer MusicPlayerService command queued.")
         } catch (e: Exception) {
             Log.e(TAG, "Non-critical error starting background service: ${e.message}")
         }
@@ -74,11 +74,15 @@ class MainActivity : ComponentActivity() {
                 false -> false
                 null -> isSystemInDarkTheme() // Sync standard system settings
             }
+            val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
 
             @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
             val windowSizeClass = calculateWindowSizeClass(this)
 
-            MyApplicationTheme(darkTheme = forceDark) {
+            MyApplicationTheme(
+                darkTheme = forceDark,
+                dynamicColor = dynamicColorEnabled
+            ) {
                 ProvideResponsiveDimensions {
                     MainScreen(viewModel = viewModel, windowSizeClass = windowSizeClass)
                 }

@@ -35,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.activity.compose.BackHandler
 import com.example.data.db.MediaEntity
 import com.example.data.db.PlaylistEntity
@@ -134,7 +135,8 @@ fun AudioTab(
 
 @Composable
 fun TracksView(viewModel: MediaViewModel) {
-    val songs by viewModel.filteredAudio.collectAsState()
+    val lazySongs = viewModel.pagedAudio.collectAsLazyPagingItems()
+    val songs = lazySongs.itemSnapshotList.items.filterNotNull()
     val activeSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
 
@@ -201,20 +203,35 @@ fun TracksView(viewModel: MediaViewModel) {
             }
 
             val isScanning by viewModel.isScanning.collectAsState()
+            val loadState = lazySongs.loadState.refresh
 
-            if (isScanning && songs.isEmpty()) {
+            if (loadState is androidx.paging.LoadState.Loading || (isScanning && lazySongs.itemCount == 0)) {
                 Box(modifier = Modifier.weight(1f)) {
-                    SkeletonListLoader()
+                    com.example.ui.components.MediaScannerLoadingState(
+                        title = "Loading audio tracks...",
+                        subtitle = "Please wait, indexing of local library is running in the background."
+                    )
                 }
-            } else if (songs.isEmpty()) {
-                EmptyBox(message = "No local tracks found. Pull down settings or scan storage.")
+            } else if (lazySongs.itemCount == 0) {
+                Box(modifier = Modifier.weight(1f)) {
+                    com.example.ui.components.MediaScannerEmptyState(
+                        title = "No audio files found",
+                        description = "No local audio or music tracks were found on your device storage. Execute a deep scan of the system folders now.",
+                        icon = Icons.Filled.QueueMusic,
+                        onAction = { viewModel.forceScanMedia() }
+                    )
+                }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(bottom = 160.dp)
                 ) {
-                    itemsIndexed(songs) { index, song ->
+                    items(
+                        count = lazySongs.itemCount,
+                        key = { index -> lazySongs[index]?.path ?: index.toString() }
+                    ) { index ->
+                        val song = lazySongs[index] ?: return@items
                         val isCurrent = song.path == activeSong?.path
                         SongListItem(
                             song = song,
@@ -316,6 +333,7 @@ fun TracksView(viewModel: MediaViewModel) {
         detailsDialogSong?.let { song ->
             DetailsDialog(
                 song = song,
+                viewModel = viewModel,
                 onDismiss = { detailsDialogSong = null }
             )
         }
@@ -420,6 +438,8 @@ fun PlaylistsView(viewModel: MediaViewModel) {
 
     var showPlaylistMaker by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
+    var playlistToRename by remember { mutableStateOf<PlaylistEntity?>(null) }
+    var renamePlaylistName by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -476,8 +496,19 @@ fun PlaylistsView(viewModel: MediaViewModel) {
                                         Text("Playlists category folder", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 11.sp)
                                     }
                                 }
-                                IconButton(onClick = { viewModel.deletePlaylist(pl.playlistId) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    IconButton(onClick = {
+                                        playlistToRename = pl
+                                        renamePlaylistName = pl.name
+                                    }) {
+                                        Icon(Icons.Filled.Edit, contentDescription = "Rename", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { viewModel.deletePlaylist(pl.playlistId) }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
 
@@ -543,6 +574,42 @@ fun PlaylistsView(viewModel: MediaViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showPlaylistMaker = false }) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                }
+            }
+        )
+    }
+
+    playlistToRename?.let { pl ->
+        AlertDialog(
+            onDismissRequest = { playlistToRename = null },
+            title = { Text("Rename Playlist", color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                OutlinedTextField(
+                    value = renamePlaylistName,
+                    onValueChange = { renamePlaylistName = it },
+                    placeholder = { Text("Enter new name") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        cursorColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (renamePlaylistName.isNotBlank()) {
+                        viewModel.renamePlaylist(pl.playlistId, renamePlaylistName.trim())
+                        playlistToRename = null
+                    }
+                }) {
+                    Text("Rename", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { playlistToRename = null }) {
                     Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
                 }
             }
@@ -623,6 +690,7 @@ fun FavoritesView(viewModel: MediaViewModel) {
             detailsDialogSong?.let { song ->
                 DetailsDialog(
                     song = song,
+                    viewModel = viewModel,
                     onDismiss = { detailsDialogSong = null }
                 )
             }
@@ -874,22 +942,60 @@ fun AddToPlaylistDialog(
     onDismiss: () -> Unit
 ) {
     val playlists by viewModel.playlists.collectAsState()
+    var inlinePlaylistName by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Save Song Into Playlist Folder", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 250.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Select playlist category for target track: ${song.title}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(8.dp))
+                Text("Select playlist category for target track: ${song.title}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                
+                // Inline Creation Row
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = inlinePlaylistName,
+                        onValueChange = { inlinePlaylistName = it },
+                        placeholder = { Text("Create & Add...", fontSize = 11.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+                    Button(
+                        onClick = {
+                            if (inlinePlaylistName.isNotBlank()) {
+                                viewModel.createPlaylistAndAddSong(inlinePlaylistName.trim(), song.path)
+                                onDismiss()
+                            }
+                        },
+                        enabled = inlinePlaylistName.isNotBlank(),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Save", fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 if (playlists.isEmpty()) {
-                    Text("No playlists created yet. Create a playlist first using the Playlists tab.", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                    Text("No playlists created yet. Create a new one with the text block above!", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         items(playlists) { pl ->
                             Card(
                                 modifier = Modifier
@@ -1206,6 +1312,7 @@ fun DeleteConfirmationDialog(
 @Composable
 fun DetailsDialog(
     song: MediaEntity,
+    viewModel: MediaViewModel,
     onDismiss: () -> Unit
 ) {
     val fileSizeFormatted = remember(song.path, song.size) {
@@ -1244,11 +1351,16 @@ fun DetailsDialog(
         }
     }
 
+    var isAiLoading by remember { mutableStateOf(false) }
+    var aiSuggestions by remember { mutableStateOf<com.example.ai.GeminiMetadataHelper.MetadataSuggestions?>(null) }
+    var aiError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Info",
+                text = "Track Information",
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Black,
                 fontSize = 18.sp
@@ -1257,7 +1369,9 @@ fun DetailsDialog(
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(top = 4.dp)
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Title", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -1272,6 +1386,13 @@ fun DetailsDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Album", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text(song.album, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                }
+
+                if (song.genre != null && song.genre != "Unknown Genre") {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Genre", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(song.genre, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    }
                 }
 
                 if (song.year != "Unknown Year") {
@@ -1318,6 +1439,135 @@ fun DetailsDialog(
                         lineHeight = 14.sp
                     )
                 }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                // Gemini AI Integration Section
+                if (isAiLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            Text("Gemini is analyzing file properties...", fontSize = 11.sp, color = Color.Gray)
+                        }
+                    }
+                } else if (aiSuggestions != null) {
+                    val sug = aiSuggestions!!
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = "AI",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text("AI Metadata Suggestion", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                }
+                                IconButton(onClick = { aiSuggestions = null }, modifier = Modifier.size(20.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(12.dp))
+                                }
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("• Title: ${sug.title}", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("• Artist: ${sug.artist}", fontSize = 11.sp)
+                                Text("• Album: ${sug.album}", fontSize = 11.sp)
+                                Text("• Genre: ${sug.genre}", fontSize = 11.sp)
+                                Text("• Year: ${sug.year}", fontSize = 11.sp)
+                            }
+
+                            Text(
+                                text = "Analysis: ${sug.explanation}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = androidx.compose.ui.text.TextStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                            )
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+
+                            Text(
+                                text = "Caution: AI Suggestions are for prototyping and utilize a direct API key. Any secrets stored in strings are not secure in public production distributions.",
+                                fontSize = 9.sp,
+                                lineHeight = 11.sp,
+                                color = Color.Gray
+                            )
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            Button(
+                                onClick = {
+                                    viewModel.updateMediaMetadata(song.path, sug.title, sug.artist, sug.album, sug.genre, sug.year)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(vertical = 4.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text("Apply AI Tags", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+                } else {
+                    if (aiError != null) {
+                        Text(aiError!!, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            isAiLoading = true
+                            aiError = null
+                            coroutineScope.launch {
+                                val result = com.example.ai.GeminiMetadataHelper.fetchSuggestions(
+                                    filePath = song.path,
+                                    currentTitle = song.title,
+                                    currentArtist = song.artist,
+                                    currentAlbum = song.album,
+                                    currentGenre = song.genre ?: "Unknown Genre"
+                                )
+                                isAiLoading = false
+                                if (result != null) {
+                                    aiSuggestions = result
+                                } else {
+                                    aiError = "Could not fetch suggestions. Please check internet connection or API keys."
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "AI Icon",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text("Auto-Categorize with Gemini AI", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -1334,7 +1584,7 @@ fun DetailsDialog(
 @Composable
 fun RecentView(viewModel: MediaViewModel) {
     val recentItems by viewModel.recentlyPlayed.collectAsState()
-    val limitedRecent = remember(recentItems) { recentItems.take(10) }
+    val limitedRecent = remember(recentItems) { recentItems.take(50) }
     
     var activeMenuSong by remember { mutableStateOf<MediaEntity?>(null) }
     var playlistDialogSong by remember { mutableStateOf<MediaEntity?>(null) }
@@ -1428,6 +1678,7 @@ fun RecentView(viewModel: MediaViewModel) {
             detailsDialogSong?.let { song ->
                 DetailsDialog(
                     song = song,
+                    viewModel = viewModel,
                     onDismiss = { detailsDialogSong = null }
                 )
             }

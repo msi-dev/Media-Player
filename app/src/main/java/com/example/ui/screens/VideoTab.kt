@@ -39,6 +39,7 @@ import com.example.VideoPlaybackActivity
 import com.example.data.db.MediaEntity
 import com.example.ui.components.rememberVideoThumbnail
 import com.example.ui.components.SkeletonListLoader
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.example.ui.theme.DarkPrimary
 import com.example.ui.theme.DarkSecondary
 import com.example.ui.viewmodel.MediaViewModel
@@ -121,7 +122,8 @@ fun VideoTab(
     viewModel: MediaViewModel,
     modifier: Modifier = Modifier
 ) {
-    val videos by viewModel.filteredVideos.collectAsState()
+    val lazyVideos = viewModel.pagedVideos.collectAsLazyPagingItems()
+    val videos = lazyVideos.itemSnapshotList.items.filterNotNull()
     val context = LocalContext.current
 
     // Sub-tab selection (0: Videos, 1: Folders)
@@ -207,26 +209,20 @@ fun VideoTab(
         Spacer(modifier = Modifier.height(4.dp))
 
         val isScanning by viewModel.isScanning.collectAsState()
+        val loadState = lazyVideos.loadState.refresh
 
-        if (isScanning && videos.isEmpty()) {
-            SkeletonListLoader()
-        } else if (videos.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Filled.VideoFile,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
-                        modifier = Modifier.size(65.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        "No local video clips found.",
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                        fontSize = 14.sp
-                    )
-                }
-            }
+        if (loadState is androidx.paging.LoadState.Loading || (isScanning && lazyVideos.itemCount == 0)) {
+            com.example.ui.components.MediaScannerLoadingState(
+                title = "Loading video clips...",
+                subtitle = "Please wait, indexing of local library is running in the background."
+            )
+        } else if (lazyVideos.itemCount == 0) {
+            com.example.ui.components.MediaScannerEmptyState(
+                title = "No video files found",
+                description = "No local video files were found on your device storage. Execute a deep scan of the system directories to catalog them.",
+                icon = Icons.Filled.VideoFile,
+                onAction = { viewModel.forceScanMedia() }
+            )
         } else {
             when (subTabSelection) {
                 0 -> {
@@ -236,7 +232,11 @@ fun VideoTab(
                         contentPadding = PaddingValues(bottom = 160.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        itemsIndexed(videos) { _, video ->
+                        items(
+                            count = lazyVideos.itemCount,
+                            key = { index -> lazyVideos[index]?.path ?: index.toString() }
+                        ) { index ->
+                            val video = lazyVideos[index] ?: return@items
                             VideoListItem(
                                 video = video,
                                 onClick = { playVideo(video) },

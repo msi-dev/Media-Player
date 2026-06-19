@@ -11,7 +11,10 @@ import com.example.data.db.PlaylistSongJoin
 import com.example.ndk.NativeMediaBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 class MediaRepository(
     private val context: Context,
@@ -20,9 +23,19 @@ class MediaRepository(
 ) {
     private val TAG = "MediaRepository"
 
+    private var cachedFolders: List<MediaFolder>? = null
+
+    fun clearFolderCache() {
+        cachedFolders = null
+    }
+
     val allMedia: Flow<List<MediaEntity>> = mediaDao.getAllMedia()
     val allAudio: Flow<List<MediaEntity>> = mediaDao.getAllAudio()
     val allVideos: Flow<List<MediaEntity>> = mediaDao.getAllVideos()
+    
+    fun getAudioPagingSource(): androidx.paging.PagingSource<Int, MediaEntity> = mediaDao.getAllAudioPaging()
+    fun getVideosPagingSource(): androidx.paging.PagingSource<Int, MediaEntity> = mediaDao.getAllVideosPaging()
+
     val favorites: Flow<List<MediaEntity>> = mediaDao.getFavorites()
     val recentlyPlayed: Flow<List<MediaEntity>> = mediaDao.getRecentlyPlayed()
     val playlists: Flow<List<PlaylistEntity>> = mediaDao.getAllPlaylists()
@@ -51,6 +64,10 @@ class MediaRepository(
         mediaDao.renameMediaByPath(path, newTitle)
     }
 
+    suspend fun updateMediaMetadata(path: String, title: String, artist: String, album: String, genre: String, year: String) {
+        mediaDao.updateMediaMetadata(path, title, artist, album, genre, year)
+    }
+
     // Playlists
     suspend fun createPlaylist(name: String): Long {
         return mediaDao.insertPlaylist(PlaylistEntity(name = name))
@@ -58,6 +75,10 @@ class MediaRepository(
 
     suspend fun deletePlaylist(id: Long) {
         mediaDao.deletePlaylist(id)
+    }
+
+    suspend fun renamePlaylist(id: Long, newName: String) {
+        mediaDao.renamePlaylist(id, newName)
     }
 
     suspend fun addSongToPlaylist(playlistId: Long, songPath: String) {
@@ -76,11 +97,26 @@ class MediaRepository(
         return mediaDao.getMediaByPaths(paths)
     }
 
+    // App settings persistence
+    suspend fun saveSetting(key: String, value: String) {
+        mediaDao.saveSetting(com.example.data.db.AppSettingEntity(key, value))
+    }
+
+    suspend fun getSettingValue(key: String): String? {
+        return mediaDao.getSettingValue(key)
+    }
+
+    suspend fun insertMedia(media: MediaEntity) {
+        mediaDao.insertMediaSingle(media)
+    }
+
     /**
      * Performs scan of local system using MediaStore, with auto-injection of demo files if empty.
      */
     suspend fun scanLocalMedia(forceScan: Boolean = false) = withContext(Dispatchers.IO) {
-        if (!forceScan) {
+        if (forceScan) {
+            clearFolderCache()
+        } else {
             val cachedCount = try {
                 mediaDao.getMediaCount()
             } catch (e: Exception) {
@@ -100,6 +136,13 @@ class MediaRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load hidden folders from database: ${e.message}")
             emptyList<String>()
+        }
+
+        val settingsDataStore = com.example.data.settings.SettingsDataStore(context)
+        val scanAndroidFolder = try {
+            settingsDataStore.scanAndroidFolder.first()
+        } catch (e: Exception) {
+            false
         }
 
         // 1. Scan Audio
@@ -131,6 +174,9 @@ class MediaRepository(
                     
                     // Skip hidden folder media items
                     if (hiddenFolders.any { path.startsWith(it) }) {
+                        continue
+                    }
+                    if (!scanAndroidFolder && (path.contains("/Android/", ignoreCase = true) || path.startsWith("/Android/"))) {
                         continue
                     }
 
@@ -191,6 +237,9 @@ class MediaRepository(
 
                     // Skip hidden folder media items
                     if (hiddenFolders.any { path.startsWith(it) }) {
+                        continue
+                    }
+                    if (!scanAndroidFolder && (path.contains("/Android/", ignoreCase = true) || path.startsWith("/Android/"))) {
                         continue
                     }
 
@@ -329,90 +378,123 @@ class MediaRepository(
 
     /**
      * Unified folder scanning: Queries local MediaStore for folders with audio/video media.
+     * PERFORMANCE OPTIMIZATION: Runs Audio and Video sweeps in parallel using coroutine async deferrals
+     * and caches the result to prevent storage queries from lagging/re-triggering on cheap hardware.
      */
     suspend fun queryMediaFolders(): List<MediaFolder> = withContext(Dispatchers.IO) {
-        val foldersMap = mutableMapOf<String, Triple<String, Int, Pair<Boolean, Boolean>>>()
-        
-        // Scan Audio directories
-        val audioProjection = arrayOf(MediaStore.Audio.Media.DATA)
-        try {
-            context.contentResolver.query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                audioProjection,
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
-                if (dataCol != -1) {
-                    while (cursor.moveToNext()) {
-                        val filePath = cursor.getString(dataCol) ?: continue
-                        val idx = filePath.lastIndexOf('/')
-                        if (idx <= 0) continue
-                        val parentPath = filePath.substring(0, idx)
-                        val parentName = parentPath.substringAfterLast('/')
-                        if (parentName.isNotEmpty()) {
-                            val info = foldersMap[parentPath]
-                            if (info != null) {
-                                foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(true, info.third.second))
-                            } else {
-                                foldersMap[parentPath] = Triple(parentName, 1, Pair(true, false))
+        cachedFolders?.let {
+            Log.i(TAG, "Instant load: Returning cached folders list of size ${it.size}")
+            return@withContext it
+        }
+
+        // Run scans concurrently
+        val resultList = coroutineScope {
+            val audioDeferred = async {
+                val audioMap = mutableMapOf<String, Pair<String, Int>>()
+                val audioProjection = arrayOf(MediaStore.Audio.Media.DATA)
+                try {
+                    context.contentResolver.query(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        audioProjection,
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                        if (dataCol != -1) {
+                            while (cursor.moveToNext()) {
+                                val filePath = cursor.getString(dataCol) ?: continue
+                                val idx = filePath.lastIndexOf('/')
+                                if (idx <= 0) continue
+                                val parentPath = filePath.substring(0, idx)
+                                val current = audioMap[parentPath]
+                                if (current != null) {
+                                    audioMap[parentPath] = Pair(current.first, current.second + 1)
+                                } else {
+                                    val parentName = parentPath.substringAfterLast('/')
+                                    if (parentName.isNotEmpty()) {
+                                        audioMap[parentPath] = Pair(parentName, 1)
+                                    }
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error querying MediaStore folders for audio: ${e.message}")
                 }
+                audioMap
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error querying MediaStore folders for audio: ${e.message}")
-        }
 
-        // Scan Video directories
-        val videoProjection = arrayOf(MediaStore.Video.Media.DATA)
-        try {
-            context.contentResolver.query(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                videoProjection,
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
-                if (dataCol != -1) {
-                    while (cursor.moveToNext()) {
-                        val filePath = cursor.getString(dataCol) ?: continue
-                        val idx = filePath.lastIndexOf('/')
-                        if (idx <= 0) continue
-                        val parentPath = filePath.substring(0, idx)
-                        val parentName = parentPath.substringAfterLast('/')
-                        if (parentName.isNotEmpty()) {
-                            val info = foldersMap[parentPath]
-                            if (info != null) {
-                                foldersMap[parentPath] = Triple(info.first, info.second + 1, Pair(info.third.first, true))
-                            } else {
-                                foldersMap[parentPath] = Triple(parentName, 1, Pair(false, true))
+            val videoDeferred = async {
+                val videoMap = mutableMapOf<String, Pair<String, Int>>()
+                val videoProjection = arrayOf(MediaStore.Video.Media.DATA)
+                try {
+                    context.contentResolver.query(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        videoProjection,
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
+                        if (dataCol != -1) {
+                            while (cursor.moveToNext()) {
+                                val filePath = cursor.getString(dataCol) ?: continue
+                                val idx = filePath.lastIndexOf('/')
+                                if (idx <= 0) continue
+                                val parentPath = filePath.substring(0, idx)
+                                val current = videoMap[parentPath]
+                                if (current != null) {
+                                    videoMap[parentPath] = Pair(current.first, current.second + 1)
+                                } else {
+                                    val parentName = parentPath.substringAfterLast('/')
+                                    if (parentName.isNotEmpty()) {
+                                        videoMap[parentPath] = Pair(parentName, 1)
+                                    }
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error querying MediaStore folders for video: ${e.message}")
+                }
+                videoMap
+            }
+
+            val audioResults = audioDeferred.await()
+            val videoResults = videoDeferred.await()
+
+            val foldersMap = mutableMapOf<String, Triple<String, Int, Pair<Boolean, Boolean>>>()
+            for ((path, pair) in audioResults) {
+                foldersMap[path] = Triple(pair.first, pair.second, Pair(true, false))
+            }
+            for ((path, pair) in videoResults) {
+                val existing = foldersMap[path]
+                if (existing != null) {
+                    foldersMap[path] = Triple(existing.first, existing.second + pair.second, Pair(existing.third.first, true))
+                } else {
+                    foldersMap[path] = Triple(pair.first, pair.second, Pair(false, true))
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error querying MediaStore folders for video: ${e.message}")
+
+            // Include any Demo preset folder if physical list is empty
+            if (foldersMap.isEmpty()) {
+                foldersMap["/demo_vault"] = Triple("Demo Vault", 9, Pair(true, true))
+            }
+
+            foldersMap.map { (path, info) ->
+                MediaFolder(
+                    path = path,
+                    name = info.first,
+                    totalItems = info.second,
+                    hasAudio = info.third.first,
+                    hasVideo = info.third.second
+                )
+            }.sortedBy { it.name.lowercase() }
         }
 
-        // Include any Demo preset folder if physical list is empty
-        if (foldersMap.isEmpty()) {
-            foldersMap["/demo_vault"] = Triple("Demo Vault", 9, Pair(true, true))
-        }
-
-        foldersMap.map { (path, info) ->
-            MediaFolder(
-                path = path,
-                name = info.first,
-                totalItems = info.second,
-                hasAudio = info.third.first,
-                hasVideo = info.third.second
-            )
-        }.sortedBy { it.name.lowercase() }
+        cachedFolders = resultList
+        resultList
     }
 
     /**

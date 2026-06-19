@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelProvider
 import com.example.data.db.MediaEntity
 import com.example.playback.IntentManager
-import com.example.ui.screens.FullscreenPlayerSheet
+import com.example.ui.layout.FullscreenPlayerSheet
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ProvideResponsiveDimensions
 import com.example.ui.viewmodel.MediaViewModel
@@ -44,11 +44,15 @@ class AudioPlaybackActivity : ComponentActivity() {
                 false -> false
                 null -> isSystemInDarkTheme()
             }
+            val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
 
             @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
             val windowSizeClass = calculateWindowSizeClass(this)
 
-            MyApplicationTheme(darkTheme = forceDark) {
+            MyApplicationTheme(
+                darkTheme = forceDark,
+                dynamicColor = dynamicColorEnabled
+            ) {
                 ProvideResponsiveDimensions {
                     Surface(
                         modifier = Modifier.fillMaxSize(),

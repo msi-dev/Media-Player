@@ -1,4 +1,4 @@
-package com.example.ui.screens
+package com.example.ui.layout
 
 import android.util.Log
 import android.app.AppOpsManager
@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.view.ViewGroup
@@ -42,6 +43,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +84,7 @@ fun VideoPlayerScreen(
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val activity = remember { context as? Activity }
     val coroutineScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     // Create an independent, separate ExoPlayer instance specifically for video playback
     val player = remember {
@@ -97,7 +101,27 @@ fun VideoPlayerScreen(
 
     // Release player resources when leaving this screen
     DisposableEffect(Unit) {
+        val app = context.applicationContext as com.example.MediaPlayerApp
+        app.playbackManager.activeVideoPlayer = player
+
+        // Start VideoPlayerService to handle background video state updates if background play is enabled
+        if (app.playbackManager.isVideoBackgroundPlayEnabled.value) {
+            try {
+                val serviceIntent = Intent(context, com.example.service.VideoPlayerService::class.java)
+                androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+            } catch (e: Exception) {
+                Log.e("VideoPlayer", "Failed starting VideoPlayerService: ${e.message}")
+            }
+        }
+
         onDispose {
+            app.playbackManager.activeVideoPlayer = null
+            try {
+                val serviceIntent = Intent(context, com.example.service.VideoPlayerService::class.java)
+                context.stopService(serviceIntent)
+            } catch (e: Exception) {
+                Log.e("VideoPlayer", "Error stopping VideoPlayerService: ${e.message}")
+            }
             player.release()
         }
     }
@@ -461,8 +485,7 @@ fun VideoPlayerScreen(
                                 onTap = { isControlsVisible = !latestControlsVisible },
                                 onDoubleTap = { offset ->
                                     if (latestIsLocked || !latestGestureControlsEnabled) return@detectTapGestures
-                                    val isLeft = offset.x < size.width / 2f
-                                    onDoubleTapToSkip(!isLeft)
+                                    if (player.isPlaying) player.pause() else player.play()
                                 }
                             )
                         }
@@ -863,8 +886,7 @@ fun VideoPlayerScreen(
                             onTap = { isControlsVisible = !latestControlsVisible },
                             onDoubleTap = { offset ->
                                 if (latestIsLocked || !latestGestureControlsEnabled) return@detectTapGestures
-                                val isLeft = offset.x < size.width / 2f
-                                onDoubleTapToSkip(!isLeft)
+                                if (player.isPlaying) player.pause() else player.play()
                             }
                         )
                     }
@@ -886,6 +908,7 @@ fun VideoPlayerScreen(
                         detectDragGestures(
                             onDragStart = { offset ->
                                 if (latestIsLocked || !latestGestureControlsEnabled) return@detectDragGestures
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 swipeDir = null
                                 isLeftSide = offset.x < size.width / 2f
                             },
@@ -904,6 +927,14 @@ fun VideoPlayerScreen(
                                     if (duration > 0) {
                                         val shift = (dx * 180 * latestSensitivity).toLong()
                                         val dest = (player.currentPosition + shift).coerceIn(0L, duration)
+                                        
+                                        // Tactile click on crossing second boundaries
+                                        val oldSecond = player.currentPosition / 1000
+                                        val newSecond = dest / 1000
+                                        if (oldSecond != newSecond) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                        
                                         onSwipeToSeek(dest)
                                         val delta = if (shift >= 0) "+${shift/1000}s" else "${shift/1000}s"
                                         showHUD("Scrub: ${formatDuration(dest)} [$delta]", Icons.Filled.History)
@@ -922,6 +953,14 @@ fun VideoPlayerScreen(
                                     } else {
                                         var v = latestVolume - (dy / 12f) * latestSensitivity
                                         v = v.coerceIn(0f, maxVolume)
+                                        
+                                        // Tactile click on changing integer volume level
+                                        val oldVolumeInt = latestVolume.roundToInt()
+                                        val newVolumeInt = v.roundToInt()
+                                        if (oldVolumeInt != newVolumeInt) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                        
                                         currentVolume = v
                                         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, v.roundToInt(), 0)
                                         showHUD("Volume: ${((v / maxVolume) * 100).roundToInt()}%", Icons.Filled.VolumeUp)
@@ -1602,7 +1641,7 @@ fun ToolCard(
     }
 }
 
-fun formatDuration(ms: Long): String {
+private fun formatDuration(ms: Long): String {
     val totalSecs = (ms / 1000).coerceAtLeast(0)
     val hours = totalSecs / 3600
     val minutes = (totalSecs % 3600) / 60

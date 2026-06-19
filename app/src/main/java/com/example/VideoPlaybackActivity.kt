@@ -15,7 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelProvider
 import com.example.data.db.MediaEntity
-import com.example.ui.screens.VideoPlayerScreen
+import com.example.ui.layout.VideoPlayerScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ProvideResponsiveDimensions
 import com.example.ui.viewmodel.MediaViewModel
@@ -41,8 +41,12 @@ class VideoPlaybackActivity : ComponentActivity() {
                 false -> false
                 null -> isSystemInDarkTheme()
             }
+            val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
 
-            MyApplicationTheme(darkTheme = forceDark) {
+            MyApplicationTheme(
+                darkTheme = forceDark,
+                dynamicColor = dynamicColorEnabled
+            ) {
                 ProvideResponsiveDimensions {
                     Surface(
                         modifier = Modifier.fillMaxSize(),

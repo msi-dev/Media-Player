@@ -1,4 +1,4 @@
-package com.example.playback
+package com.example.service
 
 import android.Manifest
 import android.app.Notification
@@ -18,7 +18,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
 import com.example.MainActivity
 
-class NotificationManager {
+class NotificationService {
     companion object {
         const val CHANNEL_ID = "media_playback_channel"
         const val CHANNEL_NAME = "Media Playback Control"
@@ -52,13 +52,13 @@ class NotificationManager {
         }
 
         @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-        private fun getServicePendingIntent(context: Context, action: String): PendingIntent {
-            val intent = Intent(context, MediaPlaybackService::class.java).apply {
+        private fun getServicePendingIntent(context: Context, action: String, serviceClass: Class<*>): PendingIntent {
+            val intent = Intent(context, serviceClass).apply {
                 this.action = action
             }
             return PendingIntent.getService(
                 context,
-                action.hashCode(),
+                (action + serviceClass.simpleName).hashCode(),
                 intent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
@@ -87,24 +87,24 @@ class NotificationManager {
 
             val prevAction = NotificationCompat.Action(
                 android.R.drawable.ic_media_previous, "Previous",
-                getServicePendingIntent(context, "ACTION_PREVIOUS")
+                getServicePendingIntent(context, "ACTION_PREVIOUS", MusicPlayerService::class.java)
             )
 
             val playPauseAction = if (isPlaying) {
                 NotificationCompat.Action(
                     android.R.drawable.ic_media_pause, "Pause",
-                    getServicePendingIntent(context, "ACTION_PAUSE")
+                    getServicePendingIntent(context, "ACTION_PAUSE", MusicPlayerService::class.java)
                 )
             } else {
                 NotificationCompat.Action(
                     android.R.drawable.ic_media_play, "Play",
-                    getServicePendingIntent(context, "ACTION_PLAY")
+                    getServicePendingIntent(context, "ACTION_PLAY", MusicPlayerService::class.java)
                 )
             }
 
             val nextAction = NotificationCompat.Action(
                 android.R.drawable.ic_media_next, "Next",
-                getServicePendingIntent(context, "ACTION_NEXT")
+                getServicePendingIntent(context, "ACTION_NEXT", MusicPlayerService::class.java)
             )
 
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -192,24 +192,24 @@ class NotificationManager {
 
             val prevAction = NotificationCompat.Action(
                 android.R.drawable.ic_media_previous, "Previous",
-                getServicePendingIntent(context, "ACTION_PREVIOUS")
+                getServicePendingIntent(context, "ACTION_PREVIOUS", VideoPlayerService::class.java)
             )
 
             val playPauseAction = if (isPlaying) {
                 NotificationCompat.Action(
                     android.R.drawable.ic_media_pause, "Pause",
-                    getServicePendingIntent(context, "ACTION_PAUSE")
+                    getServicePendingIntent(context, "ACTION_PAUSE", VideoPlayerService::class.java)
                 )
             } else {
                 NotificationCompat.Action(
                     android.R.drawable.ic_media_play, "Play",
-                    getServicePendingIntent(context, "ACTION_PLAY")
+                    getServicePendingIntent(context, "ACTION_PLAY", VideoPlayerService::class.java)
                 )
             }
 
             val nextAction = NotificationCompat.Action(
                 android.R.drawable.ic_media_next, "Next",
-                getServicePendingIntent(context, "ACTION_NEXT")
+                getServicePendingIntent(context, "ACTION_NEXT", VideoPlayerService::class.java)
             )
 
             val builder = NotificationCompat.Builder(context, "video_playback_channel")
