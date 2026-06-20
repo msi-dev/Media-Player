@@ -8,12 +8,14 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.MediaPlayerApp
-import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
 class MusicPlayerService : MediaSessionService() {
     private val TAG = "MusicPlayerService"
     private var mediaSession: MediaSession? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var isForeground = false
+    private var pausedTimeoutRunnable: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -26,12 +28,23 @@ class MusicPlayerService : MediaSessionService() {
             val app = application as MediaPlayerApp
             val player = app.playbackManager.player
 
-            // Dynamic session creation attached to active ExoPlayer
+            val sessionCallback = object : MediaSession.Callback {
+                override fun onConnect(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo
+                ): MediaSession.ConnectionResult {
+                    return MediaSession.ConnectionResult.accept(
+                        MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS,
+                        MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+                    )
+                }
+            }
+
+            // Dynamic session creation attached to active ExoPlayer and callback
             mediaSession = MediaSession.Builder(this, player)
                 .setSessionActivity(getBackIntent())
+                .setCallback(sessionCallback)
                 .build()
-            
-            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
             
             player.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -84,42 +97,19 @@ class MusicPlayerService : MediaSessionService() {
         return super.onStartCommand(intent, flags, startId)
     }
 
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var updatePending = false
-    private var lastUpdateTime = 0L
-    private var isForeground = false
-
-    private val updateRunnable = Runnable {
-        updatePending = false
-        performUpdateNotification()
-    }
-
     private fun updateNotification() {
-        val now = System.currentTimeMillis()
-        val timeSinceLastUpdate = now - lastUpdateTime
-        
-        if (!isForeground || timeSinceLastUpdate >= 500L) {
-            handler.removeCallbacks(updateRunnable)
-            performUpdateNotification()
-        } else {
-            if (!updatePending) {
-                updatePending = true
-                handler.removeCallbacks(updateRunnable)
-                handler.postDelayed(updateRunnable, 500L - timeSinceLastUpdate)
-            }
+        mediaSession?.let { session ->
+            onUpdateNotification(session, startForegroundRequired = true)
         }
     }
 
-    private fun performUpdateNotification() {
-        lastUpdateTime = System.currentTimeMillis()
+    override fun onUpdateNotification(session: MediaSession, startForegroundRequired: Boolean) {
         val app = application as MediaPlayerApp
         val playbackManager = app.playbackManager
         val currentSong = playbackManager.currentSong.value
         val isPlaying = playbackManager.isPlaying.value
-        val session = mediaSession
 
-        val notification = if (currentSong != null && session != null) {
-            NotificationService.deleteVideoNotificationChannel(this)
+        val notification = if (currentSong != null) {
             NotificationService.buildMediaNotification(
                 context = this,
                 mediaSession = session,
@@ -129,34 +119,55 @@ class MusicPlayerService : MediaSessionService() {
                 isPlaying = isPlaying
             )
         } else {
-            NotificationService.deleteVideoNotificationChannel(this)
             androidx.core.app.NotificationCompat.Builder(this, NotificationService.CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle(currentSong?.title ?: "Music Player")
-                .setContentText(currentSong?.artist ?: "Initializing playback...")
+                .setContentTitle("Music Player")
+                .setContentText("Initializing playback...")
                 .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
                 .setOngoing(isPlaying)
                 .build()
         }
 
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                startForeground(
-                    NotificationService.NOTIFICATION_ID,
-                    notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                )
+            if (isPlaying) {
+                cancelPausedTimeout()
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NotificationService.MUSIC_NOTIFICATION_ID,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                } else {
+                    startForeground(NotificationService.MUSIC_NOTIFICATION_ID, notification)
+                }
+                isForeground = true
             } else {
-                startForeground(NotificationService.NOTIFICATION_ID, notification)
+                if (!isForeground) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        startForeground(
+                            NotificationService.MUSIC_NOTIFICATION_ID,
+                            notification,
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                        )
+                    } else {
+                        startForeground(NotificationService.MUSIC_NOTIFICATION_ID, notification)
+                    }
+                    isForeground = true
+                } else {
+                    val androidNotificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    androidNotificationManager.notify(NotificationService.MUSIC_NOTIFICATION_ID, notification)
+                }
+                startPausedTimeout()
             }
-            isForeground = true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed startForeground: ${e.message}")
+            Log.e(TAG, "Failed startForeground or notify in MusicPlayerService: ${e.message}")
         }
+    }
 
-        if (!isPlaying) {
-            val androidNotificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            androidNotificationManager.notify(NotificationService.NOTIFICATION_ID, notification)
+    private fun startPausedTimeout() {
+        cancelPausedTimeout()
+        pausedTimeoutRunnable = Runnable {
+            Log.i(TAG, "Paused timeout reached. Removing foreground service state.")
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_DETACH)
             } else {
@@ -165,11 +176,19 @@ class MusicPlayerService : MediaSessionService() {
             }
             isForeground = false
         }
+        handler.postDelayed(pausedTimeoutRunnable!!, 300000L) // 5 minutes grace period
+    }
+
+    private fun cancelPausedTimeout() {
+        pausedTimeoutRunnable?.let {
+            handler.removeCallbacks(it)
+            pausedTimeoutRunnable = null
+        }
     }
 
     override fun onDestroy() {
         Log.i(TAG, "Disposing MusicPlayerService background service...")
-        handler.removeCallbacks(updateRunnable)
+        cancelPausedTimeout()
         mediaSession?.run {
             release()
             mediaSession = null

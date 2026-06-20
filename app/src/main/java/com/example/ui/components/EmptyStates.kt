@@ -40,41 +40,11 @@ fun MediaScannerLoadingState(
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.heightIn(max = 450.dp)
-        ) {
-            // MD3 standard spinner loading animation ONLY
-            CircularProgressIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp),
-                strokeWidth = 4.dp
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Text section
-            Text(
-                text = title,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = subtitle,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            )
-        }
+        CircularProgressIndicator(
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(48.dp),
+            strokeWidth = 4.dp
+        )
     }
 }
 

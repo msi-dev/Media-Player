@@ -194,6 +194,8 @@ fun AudioVisualizer(
     modifier: Modifier = Modifier
 ) {
     val spectrum by viewModel.spectrumData.collectAsState()
+    val barColor = MaterialTheme.colorScheme.primary
+    val barColorVariant = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
 
     Canvas(modifier = modifier) {
         val count = spectrum.size
@@ -205,10 +207,10 @@ fun AudioVisualizer(
             val animatedHeight = value * maxBarHeight
             val top = maxBarHeight - animatedHeight
 
-            val brush = Brush.verticalGradient(
+            val brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                 colors = listOf(
-                    DarkTertiary,
-                    DarkPrimary
+                    barColorVariant,
+                    barColor
                 )
             )
 
@@ -280,7 +282,7 @@ fun EqualizerOverlayBottomSheet(
                         modifier = Modifier.size(28.dp)
                     )
                     Text(
-                        text = "10-Band Graphic Equalizer", 
+                        text = "Equalizer", 
                         color = MaterialTheme.colorScheme.onSurface, 
                         fontWeight = FontWeight.Black, 
                         fontSize = 18.sp
@@ -303,7 +305,7 @@ fun EqualizerOverlayBottomSheet(
                 // Preset horizontal scrolling chips (Visible & usable!)
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Acoustic Presets",
+                        text = "Presets",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -613,7 +615,7 @@ fun SleepTimerOverlayBottomSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "Sleep Stop Timer",
+                text = "Sleep Timer",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -622,7 +624,7 @@ fun SleepTimerOverlayBottomSheet(
             // Preset Quick Buttons Row
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Preset Timings",
+                    text = "Presets",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

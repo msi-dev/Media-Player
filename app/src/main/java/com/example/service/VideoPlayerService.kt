@@ -13,6 +13,9 @@ import com.example.MediaPlayerApp
 class VideoPlayerService : MediaSessionService() {
     private val TAG = "VideoPlayerService"
     private var mediaSession: MediaSession? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var isForeground = false
+    private var pausedTimeoutRunnable: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -25,12 +28,23 @@ class VideoPlayerService : MediaSessionService() {
             val app = application as MediaPlayerApp
             val player = app.playbackManager.activeVideoPlayer ?: app.playbackManager.player
 
+            val sessionCallback = object : MediaSession.Callback {
+                override fun onConnect(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo
+                ): MediaSession.ConnectionResult {
+                    return MediaSession.ConnectionResult.accept(
+                        MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS,
+                        MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+                    )
+                }
+            }
+
             // Dynamic session creation attached to active video ExoPlayer
             mediaSession = MediaSession.Builder(this, player)
                 .setSessionActivity(getBackIntent())
+                .setCallback(sessionCallback)
                 .build()
-            
-            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
             
             player.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -76,51 +90,31 @@ class VideoPlayerService : MediaSessionService() {
                 when (action) {
                     "ACTION_PLAY" -> activeVideoPlayer.play()
                     "ACTION_PAUSE" -> activeVideoPlayer.pause()
-                    "ACTION_NEXT" -> { /* No-op or handle video skip */ }
-                    "ACTION_PREVIOUS" -> { /* No-op or handle video skip */ }
+                    "ACTION_NEXT" -> Log.i(TAG, "ACTION_NEXT triggered for video player (supported via UI skipping)")
+                    "ACTION_PREVIOUS" -> Log.i(TAG, "ACTION_PREVIOUS triggered for video player (supported via UI skipping)")
                 }
+            } else {
+                Log.w(TAG, "onStartCommand action received but activeVideoPlayer is null.")
             }
         }
         updateNotification()
         return super.onStartCommand(intent, flags, startId)
     }
 
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var updatePending = false
-    private var lastUpdateTime = 0L
-    private var isForeground = false
-
-    private val updateRunnable = Runnable {
-        updatePending = false
-        performUpdateNotification()
-    }
-
     private fun updateNotification() {
-        val now = System.currentTimeMillis()
-        val timeSinceLastUpdate = now - lastUpdateTime
-        
-        if (!isForeground || timeSinceLastUpdate >= 500L) {
-            handler.removeCallbacks(updateRunnable)
-            performUpdateNotification()
-        } else {
-            if (!updatePending) {
-                updatePending = true
-                handler.removeCallbacks(updateRunnable)
-                handler.postDelayed(updateRunnable, 500L - timeSinceLastUpdate)
-            }
+        mediaSession?.let { session ->
+            onUpdateNotification(session, startForegroundRequired = true)
         }
     }
 
-    private fun performUpdateNotification() {
-        lastUpdateTime = System.currentTimeMillis()
+    override fun onUpdateNotification(session: MediaSession, startForegroundRequired: Boolean) {
         val app = application as MediaPlayerApp
         val playbackManager = app.playbackManager
         val currentlyPlayingVideo = playbackManager.currentlyPlayingVideo.value
         val isVideoBgPlay = playbackManager.isVideoBackgroundPlayEnabled.value
         val isPlaying = playbackManager.activeVideoPlayer?.isPlaying ?: false
-        val session = mediaSession
 
-        val notification = if (currentlyPlayingVideo != null && isVideoBgPlay && session != null) {
+        val notification = if (currentlyPlayingVideo != null && isVideoBgPlay) {
             NotificationService.buildVideoMediaNotification(
                 context = this,
                 mediaSession = session,
@@ -140,23 +134,45 @@ class VideoPlayerService : MediaSessionService() {
         }
 
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                startForeground(
-                    NotificationService.NOTIFICATION_ID,
-                    notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                )
+            if (isPlaying && isVideoBgPlay) {
+                cancelPausedTimeout()
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NotificationService.VIDEO_NOTIFICATION_ID,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                } else {
+                    startForeground(NotificationService.VIDEO_NOTIFICATION_ID, notification)
+                }
+                isForeground = true
             } else {
-                startForeground(NotificationService.NOTIFICATION_ID, notification)
+                if (!isForeground) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        startForeground(
+                            NotificationService.VIDEO_NOTIFICATION_ID,
+                            notification,
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                        )
+                    } else {
+                        startForeground(NotificationService.VIDEO_NOTIFICATION_ID, notification)
+                    }
+                    isForeground = true
+                } else {
+                    val androidNotificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    androidNotificationManager.notify(NotificationService.VIDEO_NOTIFICATION_ID, notification)
+                }
+                startPausedTimeout()
             }
-            isForeground = true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed startForeground in VideoPlayerService: ${e.message}")
+            Log.e(TAG, "Failed startForeground or notify in VideoPlayerService: ${e.message}")
         }
+    }
 
-        if (!isPlaying && !isVideoBgPlay) {
-            val androidNotificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            androidNotificationManager.notify(NotificationService.NOTIFICATION_ID, notification)
+    private fun startPausedTimeout() {
+        cancelPausedTimeout()
+        pausedTimeoutRunnable = Runnable {
+            Log.i(TAG, "Paused timeout reached. Removing foreground service state for video.")
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_DETACH)
             } else {
@@ -165,11 +181,19 @@ class VideoPlayerService : MediaSessionService() {
             }
             isForeground = false
         }
+        handler.postDelayed(pausedTimeoutRunnable!!, 300000L) // 5 minutes grace period
+    }
+
+    private fun cancelPausedTimeout() {
+        pausedTimeoutRunnable?.let {
+            handler.removeCallbacks(it)
+            pausedTimeoutRunnable = null
+        }
     }
 
     override fun onDestroy() {
         Log.i(TAG, "Disposing VideoPlayerService background service...")
-        handler.removeCallbacks(updateRunnable)
+        cancelPausedTimeout()
         mediaSession?.run {
             release()
             mediaSession = null

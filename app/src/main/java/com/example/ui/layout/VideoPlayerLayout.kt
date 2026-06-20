@@ -260,7 +260,16 @@ fun VideoPlayerScreen(
     DisposableEffect(video.path) {
         player.stop()
         player.clearMediaItems()
-        player.setMediaItem(MediaItem.fromUri(video.path))
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(video.path)
+            .setUri(video.path)
+            .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(video.title)
+                .setArtist(video.artist)
+                .setAlbumTitle(video.album)
+                .build())
+            .build()
+        player.setMediaItem(mediaItem)
         if (isVideoResumePlayEnabled && video.lastPlayedPosition > 0L && !initiatedBySkip) {
             player.seekTo(video.lastPlayedPosition)
         } else {

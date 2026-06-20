@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,169 +60,168 @@ fun MiniPlayerCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 6.dp, bottom = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            // Drag handle hook
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Background Waveform Visualizer spanning across the entire mini player
             Box(
                 modifier = Modifier
-                    .width(36.dp)
-                    .height(4.dp)
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 0.25f }
+            ) {
+                WaveformVisualizer(
+                    isPlaying = isPlaying,
+                    style = if (waveformStyle == "None") "Wave" else waveformStyle,
+                    colorType = waveformColorType,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // Beautiful gradient overlay for readable contrast
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
                     .background(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                        shape = CircleShape
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.05f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
+                            )
+                        )
                     )
-                    .align(Alignment.CenterHorizontally)
             )
 
-            Row(
+            Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .fillMaxSize()
+                    .padding(top = 6.dp, bottom = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    AlbumArtImage(
-                        songPath = song.path,
-                        songTitle = song.title,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            song.title,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                // Drag handle hook
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                            shape = CircleShape
                         )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
+                        .align(Alignment.CenterHorizontally)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        AlbumArtImage(
+                            songPath = song.path,
+                            songTitle = song.title,
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                song.title,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text(
                                 song.artist,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 fontSize = 11.sp,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            WaveformVisualizer(
-                                isPlaying = isPlaying,
-                                style = waveformStyle,
-                                colorType = waveformColorType,
-                                modifier = Modifier.width(28.dp).height(12.dp)
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Playback Speed Toggle
-                    IconButton(onClick = { showMiniSpeedDialog = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.Speed,
-                            contentDescription = "Speed",
-                            tint = if (playbackSpeed != 1.0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    IconButton(onClick = { viewModel.playPrevious() }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.SkipPrevious,
-                            contentDescription = "Prev",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
-                        modifier = Modifier.size(44.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                            contentDescription = "PlayPause",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(38.dp)
-                        )
-                    }
+                        IconButton(onClick = { viewModel.playPrevious() }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Filled.SkipPrevious,
+                                contentDescription = "Prev",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
 
-                    IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.SkipNext,
-                            contentDescription = "Next",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                        IconButton(
+                            onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                contentDescription = "PlayPause",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(38.dp)
+                            )
+                        }
 
-                    // Sleep Stop Timer
-                    IconButton(onClick = { showMiniSleepTimerDialog = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.Timer,
-                            contentDescription = "Sleep Timer",
-                            tint = if (timerRemaining > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Filled.SkipNext,
+                                contentDescription = "Next",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
-            }
 
-            // Interactive Progress Transport Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = formatDuration(currentDisplayPosition),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Box(
+                // Interactive Progress Transport Bar
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CustomAospSeekBar(
-                        progress = if (totalTime > 0) currentDisplayPosition.toFloat() / totalTime else 0f,
-                        onValueChange = { percent ->
-                            isSeeking = true
-                            localSeekProgress = percent
-                        },
-                        onValueChangeFinished = {
-                            val target = (localSeekProgress * totalTime).toLong()
-                            viewModel.seekTo(target)
-                            isSeeking = false
-                        }
+                    Text(
+                        text = formatDuration(currentDisplayPosition),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        CustomAospSeekBar(
+                            progress = if (totalTime > 0) currentDisplayPosition.toFloat() / totalTime else 0f,
+                            onValueChange = { percent ->
+                                isSeeking = true
+                                localSeekProgress = percent
+                            },
+                            onValueChangeFinished = {
+                                val target = (localSeekProgress * totalTime).toLong()
+                                viewModel.seekTo(target)
+                                isSeeking = false
+                            }
+                        )
+                    }
+
+                    Text(
+                        text = formatDuration(totalTime),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
-
-                Text(
-                    text = formatDuration(totalTime),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
     }

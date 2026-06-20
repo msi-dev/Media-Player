@@ -170,12 +170,12 @@ class PlaybackManager(private val context: Context) {
                 val now = System.currentTimeMillis()
                 if (now - lastDbWriteTime > 3000L) {
                     lastDbWriteTime = now
-                    _currentSong.value?.let { song ->
-                        scope.launch(Dispatchers.IO) {
-                            repository.updateLastPlayedPosition(song.path, pos)
-                        }
-                    }
-                    saveState()
+                    // Save progress locally to SharedPreferences (fast, does not trigger Room invalidate flow)
+                    val currentSongPath = _currentSong.value?.path ?: ""
+                    statePrefs.edit()
+                        .putString("persisted_current_song_path", currentSongPath)
+                        .putLong("persisted_current_position", pos)
+                        .apply()
                 }
             }
             updateHandler.postDelayed(this, 250)
@@ -309,6 +309,11 @@ class PlaybackManager(private val context: Context) {
         val mediaItems = songs.map { song ->
             val builder = MediaItem.Builder()
                 .setMediaId(song.path)
+                .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setAlbumTitle(song.album)
+                    .build())
             
             if (song.path.startsWith("asset:///")) {
                 // Asset parsing
@@ -588,6 +593,11 @@ class PlaybackManager(private val context: Context) {
         val mediaItem = MediaItem.Builder()
             .setMediaId(song.path)
             .setUri(if (song.path.startsWith("asset:///")) Uri.parse("file:///android_asset/${song.path.substring("asset:///".length)}") else Uri.parse(song.path))
+            .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .setAlbumTitle(song.album)
+                .build())
             .build()
         player.addMediaItem(insertIndex, mediaItem)
     }
@@ -600,6 +610,11 @@ class PlaybackManager(private val context: Context) {
         val mediaItem = MediaItem.Builder()
             .setMediaId(song.path)
             .setUri(if (song.path.startsWith("asset:///")) Uri.parse("file:///android_asset/${song.path.substring(9)}") else Uri.parse(song.path))
+            .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .setAlbumTitle(song.album)
+                .build())
             .build()
         player.addMediaItem(mediaItem)
     }

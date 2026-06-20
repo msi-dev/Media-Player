@@ -23,7 +23,9 @@ class NotificationService {
         const val CHANNEL_ID = "media_playback_channel"
         const val CHANNEL_NAME = "Media Playback Control"
         const val CHANNEL_DESC = "Interactive playback controls for audio and video streams"
-        const val NOTIFICATION_ID = 8001
+        const val MUSIC_NOTIFICATION_ID = 101
+        const val VIDEO_NOTIFICATION_ID = 102
+        const val NOTIFICATION_ID = 8001 // Deprecated/legacy fallback
 
         fun checkNotificationPermission(context: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
