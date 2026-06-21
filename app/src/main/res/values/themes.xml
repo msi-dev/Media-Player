@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Base application theme. -->
-    <style name="Theme.MediaPlayer" parent="Theme.Material3.Dark.NoActionBar">
-        <!-- Customize your dark theme here. -->
-        <item name="android:statusBarColor">#12131A</item>
-        <item name="android:navigationBarColor">#12131A</item>
-        <item name="android:windowBackground">#12131A</item>
-    </style>
+
+    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar" />
 </resources>

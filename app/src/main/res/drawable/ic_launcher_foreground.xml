@@ -1,11 +1,67 @@
-<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Play arrow glowing icon inside an elegant round ring -->
+
+    <!-- Subtle elegant ambient drop shadow for the main red disc -->
     <path
-        android:fillColor="#FF2A54"
-        android:pathData="M54,22C36.33,22 22,36.33 22,54C22,71.67 36.33,86 54,86C71.67,86 86,71.67 86,54C86,36.33 71.67,22 54,22ZM46,67L46,41L66,54L46,67Z" />
+        android:fillColor="#15000000"
+        android:pathData="M 54, 55 m -27, 0 a 27,27 0,1,1 54,0 a 27,27 0,1,1 -54,0" />
+
+    <!-- Main red circular disc of the logo -->
+    <path
+        android:fillColor="#E52E2E"
+        android:pathData="M 54, 54 m -27, 0 a 27,27 0,1,1 54,0 a 27,27 0,1,1 -54,0" />
+
+    <!-- Solid white thick gaps outlining the central triangle and extending outwards -->
+    <!-- Extension 1: Slanted up-left from top-left vertex -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M 47.5, 43 L 19.5, 27" />
+
+    <!-- Extension 2: Straight downwards from bottom-left vertex -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M 47.5, 65 L 47.5, 87" />
+
+    <!-- Extension 3: Slanted down-right from the right vertex -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M 65.5, 54 L 88.5, 67" />
+
+    <!-- Thick white border surrounding the dark central play button -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineJoin="round"
+        android:fillColor="#FFFFFF"
+        android:pathData="M 47.5, 43 L 65.5, 54 L 47.5, 65 Z" />
+
+    <!-- The inner core dark slate play triangle -->
+    <path
+        android:fillColor="#121D33"
+        android:pathData="M 49.2, 45.3 L 63.2, 54 L 49.2, 62.7 Z" />
+
+    <!-- Stylized white letter "M" cutouts inside the dark slate play button -->
+    <!-- Vertical left column groove -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M 52.8, 47 L 52.8, 61" />
+
+    <!-- Diagonal connector groove -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M 52.8, 61 L 58.8, 54" />
+
 </vector>

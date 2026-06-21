@@ -1,153 +1,276 @@
 package com.msi.ui.layout
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PauseCircle
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.msi.ui.components.AlbumArtImage
-import com.msi.ui.theme.ResponsiveDimensions
+import androidx.compose.ui.unit.sp
+import com.msi.data.db.MediaEntity
 import com.msi.ui.viewmodel.MediaViewModel
+import com.msi.ui.components.AlbumArtImage
+import com.msi.ui.components.CustomAospSeekBar
 
 @Composable
-fun MiniPlayerLayout(
+fun MiniPlayerCard(
+    song: MediaEntity,
+    isPlaying: Boolean,
     viewModel: MediaViewModel,
     onClick: () -> Unit
 ) {
-    val currentTrack by viewModel.currentTrack.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val dims = ResponsiveDimensions.dimensions
+    val progress by viewModel.currentPosition.collectAsState()
+    val totalTime by viewModel.duration.collectAsState()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+    val timerRemaining by viewModel.sleepTimerRemaining.collectAsState()
+    val waveformStyle by viewModel.waveformStylePref.collectAsState()
+    val waveformColorType by viewModel.waveformColorPref.collectAsState()
 
-    val track = currentTrack ?: return
+    var showMiniSpeedDialog by remember { mutableStateOf(false) }
+    var showMiniSleepTimerDialog by remember { mutableStateOf(false) }
+
+    var isSeeking by remember { mutableStateOf(false) }
+    var localSeekProgress by remember { mutableFloatStateOf(0f) }
+    val currentDisplayPosition = if (isSeeking) (localSeekProgress * totalTime).toLong() else progress
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(dims.scaleDp(58.dp)) // Slim, reduced height
-            .clickable(
-                onClick = onClick,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
+            .height(56.dp)
+            .clickable(onClick = onClick)
+            .border(
+                BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)),
+                shape = RoundedCornerShape(12.dp)
             ),
-        shape = RoundedCornerShape(dims.scaleDp(12.dp)),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxHeight()
-                .padding(horizontal = dims.scaleDp(11.dp)),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Track Info Container
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(dims.scaleDp(8.dp)),
-                modifier = Modifier.weight(1f)
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Background Waveform Visualizer spanning across the entire mini player
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 0.18f }
             ) {
-                AlbumArtImage(
-                    songTitle = track.title,
-                    isAudio = track.isAudio,
-                    modifier = Modifier
-                        .size(dims.scaleDp(36.dp)) // Scaled down art
-                        .clip(CircleShape)
+                WaveformVisualizer(
+                    isPlaying = isPlaying,
+                    style = if (waveformStyle == "None") "Wave" else waveformStyle,
+                    colorType = waveformColorType,
+                    modifier = Modifier.fillMaxSize()
                 )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = track.title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = dims.scaleSp(12.sp), // scaled font
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = track.artist,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                        fontSize = dims.scaleSp(10.sp), // scaled down description
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
             }
 
-            // Compact control layout aligned right
+            // Beautiful gradient overlay for readable contrast
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.02f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
+                            )
+                        )
+                    )
+            )
+
             Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(dims.scaleDp(2.dp))
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(
-                    onClick = { viewModel.playPrevious() },
-                    modifier = Modifier.size(dims.scaleDp(32.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.SkipPrevious,
-                        contentDescription = "Previous Song",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(dims.scaleDp(20.dp))
+                    AlbumArtImage(
+                        songPath = song.path,
+                        songTitle = song.title,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
                     )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            song.title,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            song.artist,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                IconButton(
-                    onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
-                    modifier = Modifier
-                        .size(dims.scaleDp(38.dp))
-                        .testTag("mini_play_button")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                        contentDescription = "play or pause",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(dims.scaleDp(32.dp))
-                    )
-                }
+                    IconButton(onClick = { viewModel.playPrevious() }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.SkipPrevious,
+                            contentDescription = "Prev",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
 
-                IconButton(
-                    onClick = { viewModel.playNext() },
-                    modifier = Modifier.size(dims.scaleDp(32.dp))
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.SkipNext,
-                        contentDescription = "Skip Song",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(dims.scaleDp(20.dp))
-                    )
+                    IconButton(
+                        onClick = { if (isPlaying) viewModel.pause() else viewModel.play() },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                            contentDescription = "PlayPause",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+
+                    IconButton(onClick = { viewModel.playNext() }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.SkipNext,
+                            contentDescription = "Next",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
+    }
+
+    if (showMiniSpeedDialog) {
+        AlertDialog(
+            onDismissRequest = { showMiniSpeedDialog = false },
+            title = { Text("Playback Speed", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+                    speeds.forEach { speed ->
+                        val selected = playbackSpeed == speed
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.setPlaybackSpeed(speed)
+                                    showMiniSpeedDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 12.dp)
+                                .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent, shape = RoundedCornerShape(8.dp)),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${speed}x", color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                            if (selected) {
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMiniSpeedDialog = false }) {
+                    Text("Close", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        )
+    }
+
+    if (showMiniSleepTimerDialog) {
+        val activeTimerRemaining by viewModel.sleepTimerRemaining.collectAsState()
+        AlertDialog(
+            onDismissRequest = { showMiniSleepTimerDialog = false },
+            title = { Text("Sleep Timer", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (activeTimerRemaining > 0) {
+                        val minutesLeft = (activeTimerRemaining / 1000L) / 60
+                        val secondsLeft = (activeTimerRemaining / 1000L) % 60
+                        Text(
+                            text = String.format("Active Timer: %5d:%02d remaining", minutesLeft, secondsLeft),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+                    
+                    val timerOptions = listOf(
+                        "Stop Sleep Timer" to 0,
+                        "15 minutes" to 15,
+                        "30 minutes" to 30,
+                        "60 minutes" to 60
+                    )
+                    
+                    timerOptions.forEach { (label, mins) ->
+                        if (mins > 0 || activeTimerRemaining > 0) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.setSleepTimer(mins)
+                                        showMiniSleepTimerDialog = false
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 12.dp)
+                                    .background(
+                                        color = if (mins == 0 && activeTimerRemaining == 0L) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(label, color = if (mins == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                                if (mins > 0 && activeTimerRemaining > 0 && (activeTimerRemaining / 1000L / 60).toLong() == mins.toLong()) {
+                                    Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMiniSleepTimerDialog = false }) {
+                    Text("Close", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        )
+    }
+}
+
+private fun formatDuration(millis: Long): String {
+    val sec = (millis / 1000) % 60
+    val min = (millis / 1000 / 60) % 60
+    val hr = (millis / 1000 / 3600)
+    return if (hr > 0) {
+        String.format("%02d:%02d:%02d", hr, min, sec)
+    } else {
+        String.format("%02d:%02d", min, sec)
     }
 }
