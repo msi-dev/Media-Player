@@ -1,3 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Media Player</string>
+    <string name="action_search">Search tracks, videos, folders...</string>
+    <string name="tab_audio">Audio</string>
+    <string name="tab_video">Video</string>
+    <string name="tab_folders">Folders</string>
+    <string name="empty_media_message">No media files found. Use the Folder button in the search bar to import audio/video files, or select a directory.</string>
 </resources>
